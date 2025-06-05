@@ -88,19 +88,38 @@ async def _process_pipeline_async(
         # Use the download directory as input for merging
         input_for_merge = actual_download_dir if not merge_only else actual_download_dir
         
-        # Find modules to process for display
-        modules_to_process = []
+        # Check if this is a single file scenario (no merging needed)
+        direct_mp4_files = []
+        module_directories = []
+        
         for item in os.listdir(input_for_merge):
             item_path = os.path.join(input_for_merge, item)
             if os.path.isdir(item_path):
                 has_mp4 = any(f.lower().endswith('.mp4') for f in os.listdir(item_path))
                 if has_mp4:
-                    modules_to_process.append((item, item_path))
+                    module_directories.append((item, item_path))
+            elif item.lower().endswith('.mp4'):
+                direct_mp4_files.append(item)
+        
+        # Determine if we should skip merging
+        is_single_file_scenario = len(direct_mp4_files) > 0 and len(module_directories) == 0
+        
+        if is_single_file_scenario:
+            if verbose:
+                print(f"Detected single file scenario: {len(direct_mp4_files)} file(s) directly in downloads")
+                print("Skipping merge step - no module directories found")
+            modules_to_process = []
+        else:
+            modules_to_process = module_directories
         
         # Show merge mapping
         _print_merge_mapping(modules_to_process, input_for_merge, actual_merged_dir, verbose)
         
-        results["merge"] = await _merge_all_modules_async(input_for_merge, actual_merged_dir, verbose)
+        if is_single_file_scenario:
+            # Set empty results for merge step since no merging is needed
+            results["merge"] = {"successful": [], "failed": []}
+        else:
+            results["merge"] = await _merge_all_modules_async(input_for_merge, actual_merged_dir, verbose)
         
         if merge_only:
             return results
@@ -122,8 +141,26 @@ async def _process_pipeline_async(
                 print("Warning: Google Cloud Storage bucket not configured, skipping transcription")
                 return results
         
-        # Use merged directory as input for transcription
-        input_for_transcribe = actual_merged_dir if not transcribe_only else actual_merged_dir
+        # Smart input selection for transcription
+        if not transcribe_only:
+            # Check if merged directory has any MP4 files
+            merged_has_mp4 = False
+            if os.path.exists(actual_merged_dir) and os.path.isdir(actual_merged_dir):
+                merged_has_mp4 = any(f.lower().endswith('.mp4') for f in os.listdir(actual_merged_dir))
+            
+            if merged_has_mp4:
+                # Use merged directory if it has videos
+                input_for_transcribe = actual_merged_dir
+                if verbose:
+                    print("Using merged videos for transcription")
+            else:
+                # Fall back to download directory for single file scenarios
+                input_for_transcribe = actual_download_dir
+                if verbose:
+                    print("No merged videos found, using download directory for transcription")
+        else:
+            # transcribe_only mode - use merged directory as specified
+            input_for_transcribe = actual_merged_dir
         
         # Collect video files for display
         videos_to_transcribe = []
@@ -162,7 +199,7 @@ async def _process_pipeline_async(
 def process_pipeline(
     links: Union[str, List[str]],
     titles: Union[str, List[str], Dict[str, List[str]], None] = None,
-    output_dir: str = "lecture_processing",
+    output_dir: str = "downloaded_lectures",
     max_download_workers: int = 5,
     max_transcribe_workers: int = 3,
     transcription_method: str = "auto",

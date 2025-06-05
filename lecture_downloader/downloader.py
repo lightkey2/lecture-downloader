@@ -127,10 +127,17 @@ async def _download_single_lecture(lecture: Dict[str, str], base_dir: str, use_c
             module_dir = os.path.join(base_dir, module_name)
             os.makedirs(module_dir, exist_ok=True)
             
-            save_path = os.path.join(module_dir, f"{filename}.mp4")
+            # Ensure filename has .mp4 extension but don't duplicate it
+            if not filename.lower().endswith('.mp4'):
+                filename = f"{filename}.mp4"
+            save_path = os.path.join(module_dir, filename)
             display_title = f"{module_name}/{filename}"
         else:
-            save_path = os.path.join(base_dir, f"{lecture['title']}.mp4")
+            # Ensure title has .mp4 extension but don't duplicate it
+            title = lecture['title']
+            if not title.lower().endswith('.mp4'):
+                title = f"{title}.mp4"
+            save_path = os.path.join(base_dir, title)
             display_title = lecture['title']
             os.makedirs(base_dir, exist_ok=True)
         
@@ -397,6 +404,12 @@ def _map_units_to_modules(units: Dict[str, List[str]], titles: Dict[str, List[st
     if not titles:
         return {}
     
+    # Handle single link + single title case
+    if "single_link" in units and "single_title" in titles:
+        if verbose:
+            print("Creating direct mapping for single link + single title")
+        return {"single_title": titles["single_title"]}
+    
     # Check if this is sequential links (no unit delimiters)
     if "sequential_links" in units:
         return _map_sequential_links_to_modules(units["sequential_links"], titles, verbose)
@@ -546,17 +559,20 @@ def _generate_single_link_data(links: List[str], titles_mapping: Optional[Dict])
     lectures = []
     
     for i, link in enumerate(links, 1):
-        lecture_data = {
-            'title': f"single_lecture_{i:02d}",
-            'url': link
-        }
-        
-        # Handle single title
+        # Determine the title to use - prioritize custom title
+        print(f"titles_mapping: {titles_mapping}")
         if titles_mapping and "single_title" in titles_mapping:
             title = titles_mapping["single_title"][0] if titles_mapping["single_title"] else f"Lecture {i}"
             safe_title = title.replace('/', '-').replace('\\', '-')
-            lecture_data['display_title'] = safe_title
-            lecture_data['filename'] = safe_title
+        else:
+            safe_title = f"single_lecture_{i:02d}"
+        
+        lecture_data = {
+            'title': safe_title,
+            'url': link,
+            'display_title': safe_title,
+            'filename': safe_title
+        }
         
         lectures.append(lecture_data)
     
@@ -568,8 +584,10 @@ def _generate_link_list_data(links: List[str], titles_mapping: Optional[Dict]) -
     lectures = []
     
     for i, link in enumerate(links, 1):
+        default_title = f"lecture_{i:02d}"
+        
         lecture_data = {
-            'title': f"lecture_{i:02d}",
+            'title': default_title,
             'url': link
         }
         
@@ -579,6 +597,8 @@ def _generate_link_list_data(links: List[str], titles_mapping: Optional[Dict]) -
             if i <= len(titles_list):
                 title = titles_list[i-1]
                 safe_title = title.replace('/', '-').replace('\\', '-')
+                # Update the main title field so it's used for filename
+                lecture_data['title'] = safe_title
                 lecture_data['display_title'] = safe_title
                 lecture_data['filename'] = safe_title
         
