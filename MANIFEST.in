@@ -1,0 +1,16 @@
+include README.md
+include LICENSE
+include requirements*.txt
+include pyproject.toml
+include .bumpversion.cfg
+recursive-include examples *.py *.txt *.json *.ipynb
+recursive-include images *.png *.jpg *.jpeg *.gif *.svg
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+exclude example_links.txt
+exclude example_titles.json
+exclude .misc
+exclude lecture_processor.log
+exclude AI-Course-Demo
+exclude functional_downloads

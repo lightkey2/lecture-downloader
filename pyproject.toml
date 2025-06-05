@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lecture-downloader"
+version = "1.0.0"
+description = "A comprehensive toolkit for downloading, merging, and transcribing lecture videos"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "dan-dev-ml", email = "dan.dev.ml@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Education",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "click>=8.0.0",
+    "pandas>=1.3.0",
+    "python-dotenv>=0.19.0",
+    "aiofiles>=0.8.0",
+    "aiohttp>=3.8.0",
+    "faster-whisper>=0.10.0",
+    "IPython>=7.0.0",
+    "ipywidgets>=7.6.0",
+    "jupyter",
+    "notebook",
+]
+keywords = ["education", "video", "transcription", "canvas", "brightspace", "whisper", "lecture"]
+
+[project.optional-dependencies]
+gcloud = [
+    "google-cloud-speech>=2.16.0",
+    "google-cloud-storage>=2.7.0",
+]
+jupyter = [
+    "IPython>=7.0.0",
+    "ipywidgets>=7.6.0",
+    "jupyter",
+    "notebook",
+]
+all = [
+    "google-cloud-speech>=2.16.0",
+    "google-cloud-storage>=2.7.0",
+    "IPython>=7.0.0",
+    "ipywidgets>=7.6.0",
+    "jupyter",
+    "notebook",
+]
+
+[project.scripts]
+lecture-downloader = "lecture_downloader.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/dan-dev-ml/lecture-downloader"
+Repository = "https://github.com/dan-dev-ml/lecture-downloader"
+Documentation = "https://github.com/dan-dev-ml/lecture-downloader#readme"
+"Bug Tracker" = "https://github.com/dan-dev-ml/lecture-downloader/issues"
+"PyPI" = "https://pypi.org/project/lecture-downloader/"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lecture_downloader*"]
+exclude = ["tests*"]
