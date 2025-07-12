@@ -47,7 +47,15 @@ def _print_merge_mapping(modules_to_process: List[tuple], input_dir: str, output
                     video_prefix = "│   └── " if is_last_video else "│   ├── "
                 # Remove .mp4 extension for cleaner display
                 display_name = os.path.splitext(video_file)[0]
-        if verbose: print(f"{video_prefix}{display_name}")
+        
+        if verbose: 
+            if 'video_prefix' in locals():
+                # Print video file with prefix
+                if is_last_module:
+                    print(f"{video_prefix}{display_name}")
+                else:
+                    print(f"{video_prefix}{display_name}")
+
         elif video_count > 5:
             # Just show count for many videos
             if is_last_module:

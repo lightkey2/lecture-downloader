@@ -199,6 +199,7 @@ class LectureProcessor:
         max_workers: int = 3,
         inject_subtitles: bool = True,
         verbose: bool = True,
+        model_size_or_path: str = "base",
         # Legacy support (auto-detected)
         input_path: str = None,
         output_dir: str = None
@@ -218,6 +219,7 @@ class LectureProcessor:
             max_workers: Concurrent transcription workers
             inject_subtitles: Inject SRT into video files
             verbose: Enable progress output
+            model_size_or_path: Whisper model size or path to custom model
             input_path: Legacy parameter - if provided, auto-detects direct vs smart mode
             output_dir: Legacy parameter - if provided with input_path, uses direct paths mode
         
@@ -266,7 +268,7 @@ class LectureProcessor:
                 return {"successful": [], "failed": []}
         
         return asyncio.run(_transcribe_videos_async(
-            final_input_path, final_output_dir, language, method, max_workers, inject_subtitles
+            final_input_path, final_output_dir, language, method, max_workers, inject_subtitles, verbose, model_size_or_path
         ))
     
     def process_pipeline(
@@ -281,7 +283,8 @@ class LectureProcessor:
         inject_subtitles: bool = True,
         download_only: bool = False,
         merge_only: bool = False,
-        transcribe_only: bool = False
+        transcribe_only: bool = False,
+        model_size_or_path: str = "base"
     ) -> Dict[str, Dict[str, List[str]]]:
         """
         Complete pipeline with flexible input handling.
@@ -298,6 +301,7 @@ class LectureProcessor:
             download_only: Stop after downloading
             merge_only: Only merge existing downloads
             transcribe_only: Only transcribe existing videos
+            model_size_or_path: Whisper model size or path to custom model
         
         Returns:
             {
@@ -312,7 +316,7 @@ class LectureProcessor:
         return asyncio.run(_process_pipeline_async(
             links, titles, output_dir, max_download_workers, max_transcribe_workers,
             transcription_method, language, inject_subtitles,
-            download_only, merge_only, transcribe_only
+            download_only, merge_only, transcribe_only, self.verbose, model_size_or_path
         ))
     
     # Helper methods for interactive confirmations

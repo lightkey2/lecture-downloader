@@ -26,7 +26,8 @@ async def _process_pipeline_async(
     download_only: bool = False,
     merge_only: bool = False,
     transcribe_only: bool = False,
-    verbose: bool = False
+    verbose: bool = False,
+    model_size_or_path: str = "base"
 ) -> Dict[str, Dict[str, List[str]]]:
     """Complete pipeline with async orchestration."""
     
@@ -189,7 +190,7 @@ async def _process_pipeline_async(
         
         results["transcribe"] = await _transcribe_videos_async(
             input_for_transcribe, actual_transcripts_dir, language, 
-            transcription_method, max_transcribe_workers, inject_subtitles, verbose
+            transcription_method, max_transcribe_workers, inject_subtitles, verbose, model_size_or_path
         )
     
     return results
@@ -208,7 +209,8 @@ def process_pipeline(
     download_only: bool = False,
     merge_only: bool = False,
     transcribe_only: bool = False,
-    verbose: bool = False
+    verbose: bool = False,
+    model_size_or_path: str = "base"
 ) -> Dict[str, Dict[str, List[str]]]:
     """
     Complete pipeline: download -> merge -> transcribe.
@@ -232,6 +234,7 @@ def process_pipeline(
         merge_only: Only merge (skip download/transcribe)
         transcribe_only: Only transcribe (skip download/merge)
         verbose: Enable progress output
+        model_size_or_path: Whisper model size or path to custom model
     
     Returns:
         {
@@ -247,5 +250,5 @@ def process_pipeline(
     return asyncio.run(_process_pipeline_async(
         links, titles, output_dir, max_download_workers, max_transcribe_workers,
         transcription_method, language, inject_subtitles,
-        download_only, merge_only, transcribe_only, verbose
+        download_only, merge_only, transcribe_only, verbose, model_size_or_path
     ))
