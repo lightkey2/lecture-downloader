@@ -85,11 +85,12 @@ def merge(ctx, base_dir, input_dir, output_dir):
 @click.option('--language', '-lang', default='en-US', help='Language code')
 @click.option('--max-workers', '-w', default=3, type=int, help='Concurrent workers')
 @click.option('--no-inject', is_flag=True, help='Skip subtitle injection')
+@click.option('--resume', is_flag=True, help='Skip already-transcribed files')
 # Legacy options (auto-detected)
 @click.option('--input-path', '-i', default=None, help='Legacy: Video file or directory (auto-detects direct vs smart mode)')
 @click.option('--output-dir', '-o', default=None, help='Legacy: Output directory (if provided with input-path, uses direct paths mode)')
 @click.pass_context
-def transcribe(ctx, base_dir, method, language, max_workers, no_inject, input_path, output_dir):
+def transcribe(ctx, base_dir, method, language, max_workers, no_inject, resume, input_path, output_dir):
     """Transcribe videos using Google Cloud or Whisper."""
     verbose = ctx.obj['verbose']
     
@@ -102,6 +103,7 @@ def transcribe(ctx, base_dir, method, language, max_workers, no_inject, input_pa
             method=method,
             max_workers=max_workers,
             inject_subtitles=not no_inject,
+            resume=resume,
             input_path=input_path,
             output_dir=output_dir
         )
