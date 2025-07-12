@@ -245,15 +245,25 @@ class LectureProcessor:
                 # Only input specified = smart detection on input, default output
                 if os.path.isdir(input_path):
                     final_input_path = _detect_input_path(input_path)
+                    final_output_dir = os.path.join(os.path.dirname(final_input_path), "transcripts")
                 else:
+                    # Single file input - save transcripts in same directory as the file
                     final_input_path = input_path
-                final_output_dir = os.path.join(os.path.dirname(final_input_path), "transcripts")
+                    final_output_dir = os.path.dirname(final_input_path)
                 if self.verbose:
                     print(f"Using legacy mode with smart detection: {final_input_path} -> {final_output_dir}")
         else:
             # New simplified mode
             final_input_path = _detect_input_path(base_dir)
-            final_output_dir = os.path.join(base_dir, "transcripts")
+            
+            # Check if base_dir is actually a file path (when user passes a single file)
+            if os.path.isfile(base_dir) and base_dir.lower().endswith('.mp4'):
+                # Single file passed as base_dir - save transcripts in same directory as the file
+                final_output_dir = os.path.dirname(base_dir)
+            else:
+                # Directory passed as base_dir - use transcripts subdirectory
+                final_output_dir = os.path.join(base_dir, "transcripts")
+            
             if self.verbose:
                 print(f"Using simplified mode: {final_input_path} -> {final_output_dir}")
         

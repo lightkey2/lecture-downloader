@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lecture-downloader"
-version = "1.0.9"
+version = "1.0.10"
 description = "A comprehensive toolkit for downloading, merging, and transcribing lecture videos"
 readme = "README.md"
 license = {text = "MIT"}

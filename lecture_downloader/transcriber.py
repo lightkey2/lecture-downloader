@@ -33,6 +33,12 @@ def _print_transcribe_mapping(videos_to_transcribe: List[str], input_path: str, 
     print(f"  Videos: {len(videos_to_transcribe)}")
     print()
     
+    # Check if this is a single file input (output_dir is same as video directory)
+    is_single_file_input = False
+    if len(videos_to_transcribe) == 1:
+        video_dir = os.path.dirname(os.path.abspath(videos_to_transcribe[0]))
+        is_single_file_input = (output_dir == video_dir)
+    
     for i, video_path in enumerate(videos_to_transcribe):
         is_last_video = i == len(videos_to_transcribe) - 1
         video_prefix = "└── " if is_last_video else "├── "
@@ -41,13 +47,23 @@ def _print_transcribe_mapping(videos_to_transcribe: List[str], input_path: str, 
         video_name = Path(video_path).stem
         print(f"{video_prefix}{video_name}")
         
-        # Show output files that will be created
-        if is_last_video:
-            print(f"    ├── {video_name}.txt")
-            print(f"    └── srt/{video_name}.srt")
+        # Show output files that will be created based on input type
+        if is_single_file_input:
+            # Single file input - files saved directly in same directory
+            if is_last_video:
+                print(f"    ├── {video_name}.txt")
+                print(f"    └── {video_name}.srt")
+            else:
+                print(f"│   ├── {video_name}.txt")
+                print(f"│   └── {video_name}.srt")
         else:
-            print(f"│   ├── {video_name}.txt")
-            print(f"│   └── srt/{video_name}.srt")
+            # Directory input - files saved in transcripts subdirectory structure
+            if is_last_video:
+                print(f"    ├── {video_name}.txt")
+                print(f"    └── srt/{video_name}.srt")
+            else:
+                print(f"│   ├── {video_name}.txt")
+                print(f"│   └── srt/{video_name}.srt")
     print()
 
 # Google Cloud imports (optional)
@@ -312,17 +328,29 @@ async def _transcribe_single_video(
         if not output_dir:
             output_dir = os.path.dirname(os.path.abspath(video_path))
         
-        # Create main transcripts directory
-        transcripts_dir = os.path.join(output_dir)
-        os.makedirs(transcripts_dir, exist_ok=True)
+        # Check if we're dealing with a single file input (output_dir is same as video directory)
+        video_dir = os.path.dirname(os.path.abspath(video_path))
+        is_single_file_input = (output_dir == video_dir)
+
         
-        # Create SRT subdirectory within transcripts
-        srt_dir = os.path.join(transcripts_dir, "srt")
-        os.makedirs(srt_dir, exist_ok=True)
         
-        # Save files - SRT in subdirectory, TXT in main transcripts directory
-        srt_path = os.path.join(srt_dir, f"{video_name}.srt")
-        txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
+        if is_single_file_input:
+            # Single file input - save files directly in the same directory as the video
+            transcripts_dir = output_dir
+            srt_path = os.path.join(transcripts_dir, f"{video_name}.srt")
+            txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
+        else:
+            # Directory input - create transcripts subdirectory structure
+            transcripts_dir = os.path.join(output_dir)
+            os.makedirs(transcripts_dir, exist_ok=True)
+            
+            # Create SRT subdirectory within transcripts
+            srt_dir = os.path.join(transcripts_dir, "srt")
+            os.makedirs(srt_dir, exist_ok=True)
+            
+            # Save files - SRT in subdirectory, TXT in main transcripts directory
+            srt_path = os.path.join(srt_dir, f"{video_name}.srt")
+            txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
         
         with open(srt_path, 'w', encoding='utf-8') as f:
             f.write(srt_content)
