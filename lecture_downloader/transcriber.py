@@ -177,11 +177,11 @@ class GoogleCloudTranscriber:
 class WhisperTranscriber:
     """Faster-whisper local transcriber."""
     
-    def __init__(self, model_size_or_path: str = "base", device: str = "auto", compute_type: str = "auto"):
+    def __init__(self, model_size: str = "base", device: str = "auto", compute_type: str = "auto"):
         if not FASTER_WHISPER_AVAILABLE:
             raise ImportError("faster-whisper not available. Install with: pip install faster-whisper")
         
-        self.model_size_or_path = model_size_or_path
+        self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
         self._model = None
@@ -189,9 +189,9 @@ class WhisperTranscriber:
     def _get_model(self):
         """Get or initialize the Whisper model (cached after first use)."""
         if self._model is None:
-            print(f"Loading Whisper model: {self.model_size_or_path}")
+            print(f"Loading Whisper model: {self.model_size}")
             self._model = WhisperModel(
-                self.model_size_or_path, 
+                self.model_size, 
                 device=self.device, 
                 compute_type=self.compute_type
             )
@@ -236,8 +236,7 @@ async def _transcribe_single_video(
     language: str, 
     method: str, 
     inject_subtitles_flag: bool,
-    verbose: bool = False,
-    model_size_or_path: str = "base"
+    verbose: bool = False
 ) -> bool:
     """Transcribe a single video file."""
     video_name = Path(video_path).stem
@@ -285,7 +284,7 @@ async def _transcribe_single_video(
             
         elif method == "whisper":
             # Whisper transcription
-            transcriber = WhisperTranscriber(model_size_or_path=model_size_or_path)
+            transcriber = WhisperTranscriber()
             
             # Convert language code (GCloud uses en-US, Whisper uses en)
             whisper_language = language.split('-')[0] if '-' in language else language
@@ -313,7 +312,7 @@ async def _transcribe_single_video(
             output_dir = os.path.dirname(os.path.abspath(video_path))
         
         # Create main transcripts directory
-        transcripts_dir = os.path.join(output_dir)
+        transcripts_dir = os.path.join(output_dir, "transcripts")
         os.makedirs(transcripts_dir, exist_ok=True)
         
         # Create SRT subdirectory within transcripts
@@ -355,8 +354,7 @@ async def _transcribe_videos_async(
     method: str,
     max_workers: int,
     inject_subtitles_flag: bool,
-    verbose: bool = False,
-    model_size_or_path: str = "base"
+    verbose: bool = False
 ) -> Dict[str, List[str]]:
     """Transcribe videos with concurrent processing."""
     results = {"successful": [], "failed": []}
@@ -397,7 +395,7 @@ async def _transcribe_videos_async(
     async def transcribe_with_semaphore(video_path):
         async with semaphore:
             return await _transcribe_single_video(
-                video_path, output_dir, language, method, inject_subtitles_flag, verbose, model_size_or_path
+                video_path, output_dir, language, method, inject_subtitles_flag, verbose
             )
     
     # Create tasks for all transcriptions
@@ -501,9 +499,8 @@ def transcribe_videos(
     language: str = "en-US", # Language code for transcription (en-US for GCloud, en for Whisper)
     method: str = "auto", # "auto", "google", "whisper"
     max_workers: int = 3, 
-    inject_subtitles: bool = False, 
+    inject_subtitles: bool = True, 
     verbose: bool = False,
-    model_size_or_path: str = "base", # Whisper model size or path to custom model
     # Legacy support (auto-detected)
     input_path: str = None,
     output_dir: str = None
@@ -601,5 +598,5 @@ def transcribe_videos(
     
     # Execute transcription (handles async internally)
     return asyncio.run(_transcribe_videos_async(
-        final_input_path, final_output_dir, language, method, max_workers, inject_subtitles, verbose, model_size_or_path
+        final_input_path, final_output_dir, language, method, max_workers, inject_subtitles, verbose
     ))
