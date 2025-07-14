@@ -1111,7 +1111,6 @@ class WhisperTranscriber:
             if progress_callback:
                 progress_callback(100)
             
-            print(f"Whisper transcription completed: {len(word_info)} words")
             return word_info
             
         except Exception as e:
