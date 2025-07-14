@@ -14,7 +14,7 @@ import concurrent.futures
 from typing import List, Dict, Optional, Tuple, Union
 nest_asyncio.apply()  # Allow nested event loops in Jupyter notebooks
 
-from .utils import natural_sort_key
+from .utils import natural_sort_key, get_ffmpeg_exe
 
 
 def _analyze_ffmpeg_error(stderr_output: str) -> Tuple[bool, str]:
@@ -149,7 +149,7 @@ async def _download_single_lecture(lecture: Dict[str, str], base_dir: str, use_c
         print(f"Downloading {display_title} to {save_path}...")
             
         process = await asyncio.create_subprocess_exec(
-            "ffmpeg",
+            get_ffmpeg_exe(),
             "-i", lecture["url"],
             "-c", "copy",
             "-bsf:a", "aac_adtstoasc",

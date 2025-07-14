@@ -10,7 +10,7 @@ import tempfile
 import subprocess
 from typing import List, Dict
 
-from .utils import natural_sort_key, format_module_name_with_padding, get_video_duration
+from .utils import natural_sort_key, format_module_name_with_padding, get_video_duration, get_ffmpeg_exe
 
 
 def _print_merge_mapping(modules_to_process: List[tuple], input_dir: str, output_dir: str, verbose: bool = False):
@@ -140,7 +140,7 @@ async def _merge_single_module(module_dir: str, output_dir: str, verbose: bool =
         if verbose: print(f"  Merging videos into: {output_file}")
         
         cmd = [
-            'ffmpeg',
+            get_ffmpeg_exe(),
             '-f', 'concat',
             '-safe', '0',
             '-i', concat_file,

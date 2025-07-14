@@ -38,6 +38,7 @@ from .utils import (
     words_to_transcript, 
     extract_audio_from_video, 
     detect_transcription_method,
+    get_ffprobe_exe,
 )
 
 
@@ -106,7 +107,7 @@ def _get_video_duration(video_path: str) -> float:
     """Get video duration in seconds using ffprobe."""
     try:
         result = subprocess.run([
-            'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+            get_ffprobe_exe(), '-v', 'quiet', '-show_entries', 'format=duration',
             '-of', 'default=noprint_wrappers=1:nokey=1', video_path
         ], capture_output=True, text=True, timeout=30)
         

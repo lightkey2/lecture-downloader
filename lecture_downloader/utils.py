@@ -14,6 +14,47 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Union
 
+try:
+    import imageio_ffmpeg as ffmpeg_lib
+except ImportError:
+    ffmpeg_lib = None
+
+
+def get_ffmpeg_exe():
+    """Get FFmpeg executable path, auto-downloading if needed."""
+    if ffmpeg_lib is None:
+        raise RuntimeError("imageio-ffmpeg not installed. Please install with: pip install imageio-ffmpeg")
+    
+    try:
+        return ffmpeg_lib.get_ffmpeg_exe()
+    except Exception as e:
+        raise RuntimeError(f"Failed to get FFmpeg: {e}")
+
+
+def get_ffprobe_exe():
+    """Get FFprobe executable path."""
+    # Try to get ffprobe from the same directory as ffmpeg
+    try:
+        ffmpeg_path = get_ffmpeg_exe()
+        ffprobe_path = ffmpeg_path.replace('ffmpeg', 'ffprobe')
+        
+        # Check if ffprobe exists in the same directory
+        if os.path.exists(ffprobe_path):
+            return ffprobe_path
+    except:
+        pass
+    
+    # Fallback to system ffprobe if available
+    system_ffprobe = shutil.which('ffprobe')
+    if system_ffprobe:
+        return system_ffprobe
+    
+    # If neither works, try to use ffmpeg for basic probing
+    try:
+        return get_ffmpeg_exe()  # Some operations can use ffmpeg instead of ffprobe
+    except:
+        raise RuntimeError("Neither FFprobe nor FFmpeg found. Please ensure imageio-ffmpeg is properly installed.")
+
 
 
 def natural_sort_key(text: str) -> List:
@@ -55,7 +96,7 @@ def get_video_duration(filepath: str) -> float:
     """Get video duration in seconds using ffprobe."""
     try:
         cmd = [
-            'ffprobe', 
+            get_ffprobe_exe(), 
             '-v', 'quiet', 
             '-print_format', 'json', 
             '-show_format', 
@@ -73,7 +114,7 @@ async def extract_audio_from_video(video_path: str, output_path: str, verbose: b
     """Extract audio from video file using FFmpeg."""
     try:
         cmd = [
-            'ffmpeg', '-i', video_path,
+            get_ffmpeg_exe(), '-i', video_path,
             '-vn',  # No video
             '-acodec', 'pcm_s16le',  # 16-bit PCM
             '-ar', '16000',  # 16kHz sample rate
@@ -195,7 +236,7 @@ async def inject_subtitles(video_path: str, srt_path: str, verbose: bool = False
         
         # FFmpeg command to inject subtitles
         cmd = [
-            'ffmpeg', '-i', video_path, '-i', srt_path,
+            get_ffmpeg_exe(), '-i', video_path, '-i', srt_path,
             '-c', 'copy',  # Copy video and audio streams
             '-c:s', 'mov_text',  # Subtitle codec for MP4
             '-metadata:s:s:0', 'language=eng',  # Set subtitle language
@@ -263,21 +304,14 @@ def create_directory_structure(base_dir: str) -> Dict[str, str]:
 
 
 def check_dependencies():
-    """Check if required tools are installed."""
-    dependencies = [
-        ('ffmpeg', ['ffmpeg', '-version']),
-        ('ffprobe', ['ffprobe', '-version']),
-    ]
-    
-    missing = []
-    for name, cmd in dependencies:
-        try:
-            subprocess.run(cmd, capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            missing.append(name)
-    
-    if missing:
-        raise RuntimeError(f"Missing required dependencies: {', '.join(missing)}")
+    """Check if required tools are available (auto-download if needed)."""
+    try:
+        ffmpeg_path = get_ffmpeg_exe()
+        ffprobe_path = get_ffprobe_exe()
+        print(f"✅ FFmpeg found: {ffmpeg_path}")
+        print(f"✅ FFprobe found: {ffprobe_path}")
+    except RuntimeError as e:
+        raise RuntimeError(f"FFmpeg setup failed: {e}")
 
 
 def detect_transcription_method() -> str:

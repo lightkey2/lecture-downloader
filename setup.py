@@ -10,7 +10,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="lecture_downloader",
-    version="1.1.0",
+    version="1.1.1",
     author="dan-dev-ml",
     author_email="dan.dev.ml@gmail.com",
     url="https://github.com/dan-dev-ml/lecture-downloader",
@@ -37,6 +37,7 @@ setup(
         "aiofiles>=0.8.0",
         "aiohttp>=3.8.0",
         "faster-whisper>=0.10.0",
+        "imageio-ffmpeg>=0.4.0",
         # "google-cloud-speech>=2.16.0",
         # "google-cloud-storage>=2.7.0",
         "IPython>=7.0.0",
