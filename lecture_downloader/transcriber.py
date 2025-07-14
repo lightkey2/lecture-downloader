@@ -231,6 +231,121 @@ class VideoWatchHandler(FileSystemEventHandler):
             await self.transcription_queue.put(file_path)
 
 
+class WatchStatusManager:
+    """Manages clean status display for watch mode."""
+    
+    def __init__(self, console: Console):
+        self.console = console
+        self.active_files = {}  # file_path -> {"status": str, "progress": int, "start_time": float}
+        self.completed_files = []  # List of completed file info
+        self.stats = {"successful": 0, "failed": 0, "skipped": 0}
+        self.live_display = None
+        
+    def add_file(self, file_path: str, status: str = "Queued"):
+        """Add a file to be tracked."""
+        filename = os.path.basename(file_path)
+        self.active_files[file_path] = {
+            "filename": filename,
+            "status": status,
+            "progress": 0,
+            "start_time": time.time(),
+            "duration": 0
+        }
+    
+    def update_file_status(self, file_path: str, status: str, progress: int = None):
+        """Update file status and optionally progress."""
+        if file_path in self.active_files:
+            self.active_files[file_path]["status"] = status
+            if progress is not None:
+                self.active_files[file_path]["progress"] = progress
+            self.active_files[file_path]["duration"] = time.time() - self.active_files[file_path]["start_time"]
+    
+    def complete_file(self, file_path: str, success: bool, final_status: str = None):
+        """Mark file as completed and move to completed list."""
+        if file_path in self.active_files:
+            file_info = self.active_files.pop(file_path)
+            file_info["success"] = success
+            file_info["final_status"] = final_status or ("✅ Complete" if success else "❌ Failed")
+            self.completed_files.append(file_info)
+            
+            if success:
+                self.stats["successful"] += 1
+            else:
+                self.stats["failed"] += 1
+    
+    def skip_file(self, file_path: str):
+        """Mark file as skipped."""
+        filename = os.path.basename(file_path)
+        self.completed_files.append({
+            "filename": filename,
+            "success": True,
+            "final_status": "⏭️ Skipped",
+            "duration": 0
+        })
+        self.stats["skipped"] += 1
+    
+    def create_status_table(self) -> Table:
+        """Create the current status table."""
+        table = Table(title="📹 Processing Files", show_header=True, header_style="bold blue")
+        table.add_column("File", style="cyan", width=25)
+        table.add_column("Status", style="yellow", width=20)
+        table.add_column("Progress", width=15)
+        table.add_column("Duration", justify="right", width=10)
+        
+        # Add active files
+        for file_info in self.active_files.values():
+            progress_bar = self._create_progress_bar(file_info["progress"])
+            duration_str = _format_time(file_info["duration"])
+            
+            table.add_row(
+                file_info["filename"],
+                file_info["status"],
+                progress_bar,
+                duration_str
+            )
+        
+        # Show recent completed files (last 3)
+        recent_completed = self.completed_files[-3:] if len(self.completed_files) > 3 else self.completed_files
+        for file_info in recent_completed:
+            duration_str = _format_time(file_info["duration"])
+            table.add_row(
+                f"[dim]{file_info['filename']}[/dim]",
+                f"[dim]{file_info['final_status']}[/dim]",
+                "[dim]────────[/dim]",
+                f"[dim]{duration_str}[/dim]"
+            )
+        
+        return table
+    
+    def _create_progress_bar(self, progress: int) -> str:
+        """Create a simple text progress bar."""
+        if progress == 0:
+            return "[dim]░░░░░░░░[/dim]  0%"
+        elif progress == 100:
+            return "[green]████████[/green] 100%"
+        else:
+            filled = int(progress / 12.5)  # 8 blocks, so 100/8 = 12.5 per block
+            bar = "█" * filled + "░" * (8 - filled)
+            return f"[yellow]{bar}[/yellow] {progress:3d}%"
+    
+    def create_summary_panel(self, watch_path: str, method: str, workers: int, recursive: bool) -> Panel:
+        """Create the summary panel."""
+        # Truncate long paths
+        display_path = watch_path
+        if len(display_path) > 60:
+            display_path = "..." + display_path[-57:]
+        
+        summary_text = (
+            f"[bold]🔍 Watch Mode Active[/bold]\n"
+            f"Directory: {display_path}\n"
+            f"Recursive: {'Yes' if recursive else 'No'} | Method: {method} | Workers: {workers}\n\n"
+            f"📊 Session: {self.stats['successful']} completed, {self.stats['failed']} failed, {self.stats['skipped']} skipped\n\n"
+            f"[dim]Press Ctrl+C to stop watching[/dim]"
+        )
+        
+        return Panel.fit(summary_text, title="📹 Video Transcription Watcher")
+
+
 class WatchModeTranscriber:
     """Watch mode transcriber that monitors directories for new MP4 files."""
     
@@ -261,6 +376,12 @@ class WatchModeTranscriber:
         self.processed_files = set()
         self.queued_files = set()
         
+        # Status manager for clean display
+        self.status_manager = WatchStatusManager(self.console)
+        
+        # Shared Whisper model to avoid reloading
+        self._whisper_transcriber = None
+        
         # Statistics
         self.stats = {
             "processed": 0,
@@ -275,6 +396,13 @@ class WatchModeTranscriber:
         self.running = True
         self.stats["start_time"] = time.time()
         
+        # Initialize Whisper model once if using whisper
+        if self.method == "whisper":
+            self.console.print("[blue]Initializing Whisper model...[/blue]")
+            self._whisper_transcriber = WhisperTranscriber(model_size_or_path=self.model_size_or_path)
+            # Pre-load the model
+            self._whisper_transcriber._get_model()
+        
         # Process existing files if requested
         if process_existing:
             await self._process_existing_files()
@@ -285,11 +413,382 @@ class WatchModeTranscriber:
         self.observer.schedule(self.handler, self.watch_path, recursive=self.recursive)
         self.observer.start()
         
-        # Display watch status
-        self._display_watch_status()
+        # Start processing loop with live display
+        await self._processing_loop_with_live_display()
+    
+    async def _processing_loop_with_live_display(self):
+        """Main processing loop with clean live display."""
+        semaphore = asyncio.Semaphore(self.max_workers)
+        active_tasks = set()
         
-        # Start processing loop
-        await self._processing_loop()
+        # Create layout for live display
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=8),
+            Layout(name="main", ratio=1)
+        )
+        
+        try:
+            with Live(layout, console=self.console, refresh_per_second=2) as live:
+                while self.running:
+                    # Update display
+                    layout["header"].update(self.status_manager.create_summary_panel(
+                        self.watch_path, self.method, self.max_workers, self.recursive
+                    ))
+                    layout["main"].update(self.status_manager.create_status_table())
+                    
+                    # Check for stable files periodically
+                    if self.handler:
+                        await self.handler.check_stable_files()
+                    
+                    # Process queued files
+                    try:
+                        video_path = await asyncio.wait_for(self.transcription_queue.get(), timeout=1.0)
+                        
+                        # Add to status manager
+                        self.status_manager.add_file(video_path, "Queued")
+                        
+                        # Create transcription task
+                        task = asyncio.create_task(self._transcribe_video_with_status_manager(video_path, semaphore))
+                        active_tasks.add(task)
+                        
+                        # Clean up completed tasks
+                        done_tasks = {task for task in active_tasks if task.done()}
+                        for task in done_tasks:
+                            active_tasks.remove(task)
+                            try:
+                                await task  # Get result to handle any exceptions
+                            except Exception as e:
+                                # Error already handled in the task
+                                pass
+                    
+                    except asyncio.TimeoutError:
+                        # No new files, continue monitoring
+                        continue
+                    
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Stopping watch mode...[/yellow]")
+        finally:
+            # Wait for active tasks to complete
+            if active_tasks:
+                self.console.print(f"[blue]Waiting for {len(active_tasks)} active transcriptions to complete...[/blue]")
+                await asyncio.gather(*active_tasks, return_exceptions=True)
+            
+            # Stop observer
+            if self.observer:
+                self.observer.stop()
+                self.observer.join()
+            
+            self._display_final_stats()
+    
+    async def _transcribe_video_with_status_manager(self, video_path: str, semaphore: asyncio.Semaphore):
+        """Transcribe a single video with status manager integration."""
+        async with semaphore:
+            abs_path = os.path.abspath(video_path)
+            
+            try:
+                # Remove from queued files since we're processing it now
+                self.queued_files.discard(abs_path)
+                
+                # Check if already transcribed
+                is_single_file = os.path.dirname(abs_path) == self.output_dir
+                if self.resume and _check_existing_transcripts(video_path, self.output_dir, is_single_file):
+                    self.stats["skipped"] += 1
+                    self.processed_files.add(abs_path)
+                    self.status_manager.skip_file(video_path)
+                    return
+                
+                self.stats["processed"] += 1
+                self.status_manager.update_file_status(video_path, "Starting...", 0)
+                
+                # Create progress and status callbacks
+                def update_progress(percentage):
+                    self.status_manager.update_file_status(video_path, "Transcribing...", int(percentage))
+                
+                def update_status(message):
+                    if "Extracting audio" in message:
+                        self.status_manager.update_file_status(video_path, "Extracting audio", 5)
+                    elif "Transcribing with Whisper" in message:
+                        self.status_manager.update_file_status(video_path, "Transcribing...", 10)
+                    elif "Generating transcript" in message:
+                        self.status_manager.update_file_status(video_path, "Generating files", 90)
+                    elif "Injecting subtitles" in message:
+                        self.status_manager.update_file_status(video_path, "Injecting subtitles", 95)
+                
+                # Use shared Whisper transcriber if available
+                if self.method == "whisper" and self._whisper_transcriber:
+                    success, srt_path, txt_path = await self._transcribe_single_video_with_shared_whisper(
+                        video_path, update_progress, update_status
+                    )
+                else:
+                    success, srt_path, txt_path = await _transcribe_single_video(
+                        video_path, self.output_dir, self.language, self.method, 
+                        self.inject_subtitles, self.verbose, self.model_size_or_path, 
+                        update_progress, update_status
+                    )
+                
+                if success:
+                    self.stats["successful"] += 1
+                    self.processed_files.add(abs_path)
+                    self.status_manager.complete_file(video_path, True, "✅ Complete")
+                else:
+                    self.stats["failed"] += 1
+                    self.processed_files.add(abs_path)
+                    self.status_manager.complete_file(video_path, False, "❌ Failed")
+                    
+            except Exception as e:
+                self.stats["failed"] += 1
+                self.processed_files.add(abs_path)
+                self.status_manager.complete_file(video_path, False, f"❌ Error: {str(e)[:20]}...")
+    
+    async def _transcribe_single_video_with_shared_whisper(self, video_path: str, progress_callback, status_callback):
+        """Transcribe using the shared Whisper model to avoid reloading."""
+        video_name = Path(video_path).stem
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Extract audio
+            audio_path = os.path.join(temp_dir, f"{video_name}.wav")
+            status_callback("Extracting audio...")
+            
+            if not await extract_audio_from_video(video_path, audio_path, verbose=False):
+                status_callback("❌ Failed to extract audio")
+                return False, None, None
+            
+            # Transcribe with shared model
+            whisper_language = self.language.split('-')[0] if '-' in self.language else self.language
+            status_callback("Transcribing with Whisper...")
+            
+            word_info = await self._whisper_transcriber.transcribe_audio_whisper(
+                audio_path, whisper_language, verbose=False, progress_callback=progress_callback
+            )
+            
+            if not word_info:
+                status_callback("❌ No transcription results")
+                return False, None, None
+            
+            # Generate and save files
+            status_callback("Generating transcript files...")
+            srt_content = words_to_srt(word_info)
+            transcript_content = words_to_transcript(word_info)
+            
+            # Save files
+            video_dir = os.path.dirname(os.path.abspath(video_path))
+            is_single_file_input = (self.output_dir == video_dir)
+            
+            if is_single_file_input:
+                transcripts_dir = self.output_dir
+            else:
+                transcripts_dir = self.output_dir
+                os.makedirs(transcripts_dir, exist_ok=True)
+            
+            srt_path = os.path.join(transcripts_dir, f"{video_name}.srt")
+            txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
+            
+            with open(srt_path, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write(transcript_content)
+            
+            # Inject subtitles if requested
+            if self.inject_subtitles:
+                status_callback("Injecting subtitles...")
+                if await inject_subtitles(video_path, srt_path, verbose=False):
+                    status_callback("✅ Subtitles injected successfully")
+                else:
+                    status_callback("⚠️ Subtitle injection failed, but transcripts saved")
+            
+            status_callback(f"✅ Completed transcription for {video_name}")
+            return True, srt_path, txt_path
+    
+    async def _process_existing_files(self):
+        # Start processing loop with live display
+        await self._processing_loop_with_live_display()
+    
+    async def _processing_loop_with_live_display(self):
+        """Main processing loop with clean live display."""
+        semaphore = asyncio.Semaphore(self.max_workers)
+        active_tasks = set()
+        
+        # Create layout for live display
+        layout = Layout()
+        layout.split_column(
+            Layout(name="header", size=8),
+            Layout(name="main", ratio=1)
+        )
+        
+        try:
+            with Live(layout, console=self.console, refresh_per_second=2) as live:
+                while self.running:
+                    # Update display
+                    layout["header"].update(self.status_manager.create_summary_panel(
+                        self.watch_path, self.method, self.max_workers, self.recursive
+                    ))
+                    layout["main"].update(self.status_manager.create_status_table())
+                    
+                    # Check for stable files periodically
+                    if self.handler:
+                        await self.handler.check_stable_files()
+                    
+                    # Process queued files
+                    try:
+                        video_path = await asyncio.wait_for(self.transcription_queue.get(), timeout=1.0)
+                        
+                        # Add to status manager
+                        self.status_manager.add_file(video_path, "Queued")
+                        
+                        # Create transcription task
+                        task = asyncio.create_task(self._transcribe_video_with_status_manager(video_path, semaphore))
+                        active_tasks.add(task)
+                        
+                        # Clean up completed tasks
+                        done_tasks = {task for task in active_tasks if task.done()}
+                        for task in done_tasks:
+                            active_tasks.remove(task)
+                            try:
+                                await task  # Get result to handle any exceptions
+                            except Exception as e:
+                                # Error already handled in the task
+                                pass
+                    
+                    except asyncio.TimeoutError:
+                        # No new files, continue monitoring
+                        continue
+                    
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Stopping watch mode...[/yellow]")
+        finally:
+            # Wait for active tasks to complete
+            if active_tasks:
+                self.console.print(f"[blue]Waiting for {len(active_tasks)} active transcriptions to complete...[/blue]")
+                await asyncio.gather(*active_tasks, return_exceptions=True)
+            
+            # Stop observer
+            if self.observer:
+                self.observer.stop()
+                self.observer.join()
+            
+            self._display_final_stats()
+    
+    async def _transcribe_video_with_status_manager(self, video_path: str, semaphore: asyncio.Semaphore):
+        """Transcribe a single video with status manager integration."""
+        async with semaphore:
+            abs_path = os.path.abspath(video_path)
+            
+            try:
+                # Remove from queued files since we're processing it now
+                self.queued_files.discard(abs_path)
+                
+                # Check if already transcribed
+                is_single_file = os.path.dirname(abs_path) == self.output_dir
+                if self.resume and _check_existing_transcripts(video_path, self.output_dir, is_single_file):
+                    self.stats["skipped"] += 1
+                    self.processed_files.add(abs_path)
+                    self.status_manager.skip_file(video_path)
+                    return
+                
+                self.stats["processed"] += 1
+                self.status_manager.update_file_status(video_path, "Starting...", 0)
+                
+                # Create progress and status callbacks
+                def update_progress(percentage):
+                    self.status_manager.update_file_status(video_path, "Transcribing...", int(percentage))
+                
+                def update_status(message):
+                    if "Extracting audio" in message:
+                        self.status_manager.update_file_status(video_path, "Extracting audio", 5)
+                    elif "Transcribing with Whisper" in message:
+                        self.status_manager.update_file_status(video_path, "Transcribing...", 10)
+                    elif "Generating transcript" in message:
+                        self.status_manager.update_file_status(video_path, "Generating files", 90)
+                    elif "Injecting subtitles" in message:
+                        self.status_manager.update_file_status(video_path, "Injecting subtitles", 95)
+                
+                # Use shared Whisper transcriber if available
+                if self.method == "whisper" and self._whisper_transcriber:
+                    success, srt_path, txt_path = await self._transcribe_single_video_with_shared_whisper(
+                        video_path, update_progress, update_status
+                    )
+                else:
+                    success, srt_path, txt_path = await _transcribe_single_video(
+                        video_path, self.output_dir, self.language, self.method, 
+                        self.inject_subtitles, self.verbose, self.model_size_or_path, 
+                        update_progress, update_status
+                    )
+                
+                if success:
+                    self.stats["successful"] += 1
+                    self.processed_files.add(abs_path)
+                    self.status_manager.complete_file(video_path, True, "✅ Complete")
+                else:
+                    self.stats["failed"] += 1
+                    self.processed_files.add(abs_path)
+                    self.status_manager.complete_file(video_path, False, "❌ Failed")
+                    
+            except Exception as e:
+                self.stats["failed"] += 1
+                self.processed_files.add(abs_path)
+                self.status_manager.complete_file(video_path, False, f"❌ Error: {str(e)[:20]}...")
+    
+    async def _transcribe_single_video_with_shared_whisper(self, video_path: str, progress_callback, status_callback):
+        """Transcribe using the shared Whisper model to avoid reloading."""
+        video_name = Path(video_path).stem
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Extract audio
+            audio_path = os.path.join(temp_dir, f"{video_name}.wav")
+            status_callback("Extracting audio...")
+            
+            if not await extract_audio_from_video(video_path, audio_path, verbose=False):
+                status_callback("❌ Failed to extract audio")
+                return False, None, None
+            
+            # Transcribe with shared model
+            whisper_language = self.language.split('-')[0] if '-' in self.language else self.language
+            status_callback("Transcribing with Whisper...")
+            
+            word_info = await self._whisper_transcriber.transcribe_audio_whisper(
+                audio_path, whisper_language, verbose=False, progress_callback=progress_callback
+            )
+            
+            if not word_info:
+                status_callback("❌ No transcription results")
+                return False, None, None
+            
+            # Generate and save files
+            status_callback("Generating transcript files...")
+            srt_content = words_to_srt(word_info)
+            transcript_content = words_to_transcript(word_info)
+            
+            # Save files
+            video_dir = os.path.dirname(os.path.abspath(video_path))
+            is_single_file_input = (self.output_dir == video_dir)
+            
+            if is_single_file_input:
+                transcripts_dir = self.output_dir
+            else:
+                transcripts_dir = self.output_dir
+                os.makedirs(transcripts_dir, exist_ok=True)
+            
+            srt_path = os.path.join(transcripts_dir, f"{video_name}.srt")
+            txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
+            
+            with open(srt_path, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write(transcript_content)
+            
+            # Inject subtitles if requested
+            if self.inject_subtitles:
+                status_callback("Injecting subtitles...")
+                if await inject_subtitles(video_path, srt_path, verbose=False):
+                    status_callback("✅ Subtitles injected successfully")
+                else:
+                    status_callback("⚠️ Subtitle injection failed, but transcripts saved")
+            
+            status_callback(f"✅ Completed transcription for {video_name}")
+            return True, srt_path, txt_path
     
     async def _process_existing_files(self):
         """Process existing MP4 files in the watch directory."""
