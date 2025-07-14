@@ -11,8 +11,17 @@ import shutil
 import asyncio
 import tempfile
 import subprocess
+import signal
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Union
+
+# Watch mode imports
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    WATCHDOG_AVAILABLE = True
+except ImportError:
+    WATCHDOG_AVAILABLE = False
 
 from rich.console import Console
 from rich.progress import Progress, TaskID, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn, TimeRemainingColumn
@@ -20,6 +29,8 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.live import Live
 from rich.text import Text
+from rich.layout import Layout
+from rich.align import Align
 
 from .utils import (
     words_to_srt, 
@@ -65,13 +76,13 @@ def _print_transcribe_mapping(videos_to_transcribe: List[str], input_path: str, 
                 print(f"│   ├── {video_name}.txt")
                 print(f"│   └── {video_name}.srt")
         else:
-            # Directory input - files saved in transcripts subdirectory structure
+            # Directory input - both files saved in same transcripts directory
             if is_last_video:
                 print(f"    ├── {video_name}.txt")
-                print(f"    └── srt/{video_name}.srt")
+                print(f"    └── {video_name}.srt")
             else:
                 print(f"│   ├── {video_name}.txt")
-                print(f"│   └── srt/{video_name}.srt")
+                print(f"│   └── {video_name}.srt")
     print()
 
 # Google Cloud imports (optional)
@@ -107,6 +118,28 @@ def _get_video_duration(video_path: str) -> float:
         return 0.0
 
 
+def _collect_video_files(input_path: str, recursive: bool = False) -> List[str]:
+    """Collect MP4 files from input path, optionally recursively."""
+    videos = []
+    
+    if os.path.isfile(input_path) and input_path.lower().endswith('.mp4'):
+        videos.append(input_path)
+    elif os.path.isdir(input_path):
+        if recursive:
+            # Recursive search using os.walk
+            for root, dirs, files in os.walk(input_path):
+                for file in files:
+                    if file.lower().endswith('.mp4'):
+                        videos.append(os.path.join(root, file))
+        else:
+            # Top-level only
+            for file in os.listdir(input_path):
+                if file.lower().endswith('.mp4'):
+                    videos.append(os.path.join(input_path, file))
+    
+    return videos
+
+
 def _check_existing_transcripts(video_path: str, output_dir: str, is_single_file_input: bool) -> bool:
     """Check if transcript files already exist for a video."""
     video_name = Path(video_path).stem
@@ -116,8 +149,8 @@ def _check_existing_transcripts(video_path: str, output_dir: str, is_single_file
         srt_path = os.path.join(output_dir, f"{video_name}.srt")
         txt_path = os.path.join(output_dir, f"{video_name}.txt")
     else:
-        # Directory input - files saved in transcripts subdirectory structure
-        srt_path = os.path.join(output_dir, "srt", f"{video_name}.srt")
+        # Directory input - both files saved in same transcripts directory
+        srt_path = os.path.join(output_dir, f"{video_name}.srt")
         txt_path = os.path.join(output_dir, f"{video_name}.txt")
     
     return os.path.exists(srt_path) and os.path.exists(txt_path)
@@ -148,6 +181,264 @@ def _estimate_remaining_time(processed_duration: float, total_duration: float, e
         return _format_time(estimated_remaining)
     else:
         return "calculating..."
+
+
+class VideoWatchHandler(FileSystemEventHandler):
+    """File system event handler for watching MP4 files."""
+    
+    def __init__(self, transcription_queue: asyncio.Queue, processed_files: set, queued_files: set, recursive: bool = False):
+        super().__init__()
+        self.transcription_queue = transcription_queue
+        self.processed_files = processed_files
+        self.queued_files = queued_files
+        self.recursive = recursive
+        self.pending_files = {}  # Track files being written
+        
+    def on_created(self, event):
+        """Handle file creation events."""
+        if not event.is_directory and event.src_path.lower().endswith('.mp4'):
+            # Only track if not already processed or queued
+            abs_path = os.path.abspath(event.src_path)
+            if abs_path not in self.processed_files and abs_path not in self.queued_files:
+                # Start monitoring this file for completion
+                self.pending_files[abs_path] = time.time()
+            
+    def on_modified(self, event):
+        """Handle file modification events."""
+        if not event.is_directory and event.src_path.lower().endswith('.mp4'):
+            # Only track if not already processed or queued
+            abs_path = os.path.abspath(event.src_path)
+            if abs_path not in self.processed_files and abs_path not in self.queued_files:
+                # Update last modified time
+                self.pending_files[abs_path] = time.time()
+    
+    async def check_stable_files(self):
+        """Check for files that haven't been modified recently and queue them."""
+        current_time = time.time()
+        stable_files = []
+        
+        for file_path, last_modified in list(self.pending_files.items()):
+            # File is stable if not modified for 5 seconds
+            if current_time - last_modified > 5:
+                if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                    # Double-check it's not already processed or queued
+                    if file_path not in self.processed_files and file_path not in self.queued_files:
+                        stable_files.append(file_path)
+                        self.queued_files.add(file_path)
+                del self.pending_files[file_path]
+        
+        for file_path in stable_files:
+            await self.transcription_queue.put(file_path)
+
+
+class WatchModeTranscriber:
+    """Watch mode transcriber that monitors directories for new MP4 files."""
+    
+    def __init__(self, watch_path: str, output_dir: str, language: str, method: str, 
+                 max_workers: int, inject_subtitles: bool, resume: bool, recursive: bool,
+                 model_size_or_path: str = "base", verbose: bool = False):
+        if not WATCHDOG_AVAILABLE:
+            raise ImportError("watchdog not available. Install with: pip install watchdog")
+        
+        self.watch_path = watch_path
+        self.output_dir = output_dir
+        self.language = language
+        self.method = method
+        self.max_workers = max_workers
+        self.inject_subtitles = inject_subtitles
+        self.resume = resume
+        self.recursive = recursive
+        self.model_size_or_path = model_size_or_path
+        self.verbose = verbose
+        
+        self.transcription_queue = asyncio.Queue()
+        self.observer = None
+        self.handler = None
+        self.running = False
+        self.console = Console()
+        
+        # Track processed files to avoid reprocessing
+        self.processed_files = set()
+        self.queued_files = set()
+        
+        # Statistics
+        self.stats = {
+            "processed": 0,
+            "successful": 0,
+            "failed": 0,
+            "skipped": 0,
+            "start_time": None
+        }
+    
+    async def start_watching(self, process_existing: bool = True):
+        """Start watching for new files."""
+        self.running = True
+        self.stats["start_time"] = time.time()
+        
+        # Process existing files if requested
+        if process_existing:
+            await self._process_existing_files()
+        
+        # Set up file system watcher
+        self.handler = VideoWatchHandler(self.transcription_queue, self.processed_files, self.queued_files, self.recursive)
+        self.observer = Observer()
+        self.observer.schedule(self.handler, self.watch_path, recursive=self.recursive)
+        self.observer.start()
+        
+        # Display watch status
+        self._display_watch_status()
+        
+        # Start processing loop
+        await self._processing_loop()
+    
+    async def _process_existing_files(self):
+        """Process existing MP4 files in the watch directory."""
+        existing_videos = _collect_video_files(self.watch_path, self.recursive)
+        
+        if existing_videos:
+            self.console.print(f"[blue]Found {len(existing_videos)} existing MP4 files[/blue]")
+            
+            # Filter out already transcribed if resume enabled
+            videos_to_process = []
+            for video_path in existing_videos:
+                abs_path = os.path.abspath(video_path)
+                is_single_file = len(existing_videos) == 1 and os.path.dirname(abs_path) == self.output_dir
+                
+                if self.resume and _check_existing_transcripts(video_path, self.output_dir, is_single_file):
+                    self.stats["skipped"] += 1
+                    self.processed_files.add(abs_path)  # Mark as processed to avoid reprocessing
+                    if self.verbose:
+                        video_name = Path(video_path).stem
+                        self.console.print(f"[yellow]Skipping {video_name} (already transcribed)[/yellow]")
+                else:
+                    videos_to_process.append(abs_path)
+            
+            # Queue existing files for processing and mark as queued
+            for video_path in videos_to_process:
+                if video_path not in self.queued_files:
+                    self.queued_files.add(video_path)
+                    await self.transcription_queue.put(video_path)
+    
+    def _display_watch_status(self):
+        """Display current watch status."""
+        watch_info = Panel.fit(
+            f"[bold]🔍 Watch Mode Active[/bold]\n"
+            f"Directory: {self.watch_path}\n"
+            f"Recursive: {'Yes' if self.recursive else 'No'}\n"
+            f"Method: {self.method}\n"
+            f"Workers: {self.max_workers}\n"
+            f"Resume: {'Yes' if self.resume else 'No'}\n\n"
+            f"[dim]Press Ctrl+C to stop watching[/dim]",
+            title="📹 Video Transcription Watcher"
+        )
+        self.console.print(watch_info)
+    
+    async def _processing_loop(self):
+        """Main processing loop for watch mode."""
+        semaphore = asyncio.Semaphore(self.max_workers)
+        active_tasks = set()
+        
+        try:
+            while self.running:
+                # Check for stable files periodically
+                if self.handler:
+                    await self.handler.check_stable_files()
+                
+                # Process queued files
+                try:
+                    video_path = await asyncio.wait_for(self.transcription_queue.get(), timeout=1.0)
+                    
+                    # Create transcription task
+                    task = asyncio.create_task(self._transcribe_video_with_semaphore(video_path, semaphore))
+                    active_tasks.add(task)
+                    
+                    # Clean up completed tasks
+                    done_tasks = {task for task in active_tasks if task.done()}
+                    for task in done_tasks:
+                        active_tasks.remove(task)
+                        try:
+                            await task  # Get result to handle any exceptions
+                        except Exception as e:
+                            self.console.print(f"[red]Task error: {e}[/red]")
+                
+                except asyncio.TimeoutError:
+                    # No new files, continue monitoring
+                    continue
+                
+        except KeyboardInterrupt:
+            self.console.print("\n[yellow]Stopping watch mode...[/yellow]")
+        finally:
+            # Wait for active tasks to complete
+            if active_tasks:
+                self.console.print(f"[blue]Waiting for {len(active_tasks)} active transcriptions to complete...[/blue]")
+                await asyncio.gather(*active_tasks, return_exceptions=True)
+            
+            # Stop observer
+            if self.observer:
+                self.observer.stop()
+                self.observer.join()
+            
+            self._display_final_stats()
+    
+    async def _transcribe_video_with_semaphore(self, video_path: str, semaphore: asyncio.Semaphore):
+        """Transcribe a single video with semaphore control."""
+        async with semaphore:
+            video_name = Path(video_path).stem
+            abs_path = os.path.abspath(video_path)
+            
+            try:
+                # Remove from queued files since we're processing it now
+                self.queued_files.discard(abs_path)
+                
+                # Check if already transcribed
+                is_single_file = os.path.dirname(abs_path) == self.output_dir
+                if self.resume and _check_existing_transcripts(video_path, self.output_dir, is_single_file):
+                    self.stats["skipped"] += 1
+                    self.processed_files.add(abs_path)  # Mark as processed
+                    self.console.print(f"[yellow]⏭️ Skipped: {video_name} (already transcribed)[/yellow]")
+                    return
+                
+                self.stats["processed"] += 1
+                self.console.print(f"[cyan]🎬 Processing: {video_name}[/cyan]")
+                
+                success, srt_path, txt_path = await _transcribe_single_video(
+                    video_path, self.output_dir, self.language, self.method, 
+                    self.inject_subtitles, self.verbose, self.model_size_or_path
+                )
+                
+                if success:
+                    self.stats["successful"] += 1
+                    self.processed_files.add(abs_path)  # Mark as successfully processed
+                    self.console.print(f"[green]✅ Completed: {video_name}[/green]")
+                    if srt_path and txt_path:
+                        save_dir = os.path.dirname(srt_path)
+                        self.console.print(f"   📄 Saved to: {save_dir}")
+                else:
+                    self.stats["failed"] += 1
+                    self.processed_files.add(abs_path)  # Mark as processed (even if failed) to avoid retry
+                    self.console.print(f"[red]❌ Failed: {video_name}[/red]")
+                    
+            except Exception as e:
+                self.stats["failed"] += 1
+                self.processed_files.add(abs_path)  # Mark as processed (even if failed) to avoid retry
+                self.console.print(f"[red]❌ Error processing {video_name}: {str(e)}[/red]")
+    
+    def _display_final_stats(self):
+        """Display final statistics."""
+        elapsed = time.time() - self.stats["start_time"] if self.stats["start_time"] else 0
+        
+        stats_table = Table(title="📊 Watch Mode Results")
+        stats_table.add_column("Metric", style="bold")
+        stats_table.add_column("Count", justify="right")
+        
+        stats_table.add_row("Total Processed", str(self.stats["processed"]))
+        stats_table.add_row("✅ Successful", str(self.stats["successful"]))
+        stats_table.add_row("❌ Failed", str(self.stats["failed"]))
+        stats_table.add_row("⏭️ Skipped", str(self.stats["skipped"]))
+        stats_table.add_row("⏱️ Total Time", _format_time(elapsed))
+        
+        self.console.print(stats_table)
+        self.console.print("[green]Watch mode stopped.[/green]")
 
 
 class GoogleCloudTranscriber:
@@ -429,16 +720,12 @@ async def _transcribe_single_video(
             srt_path = os.path.join(transcripts_dir, f"{video_name}.srt")
             txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
         else:
-            # Directory input - create transcripts subdirectory structure
+            # Directory input - save both files in the same transcripts directory
             transcripts_dir = os.path.join(output_dir)
             os.makedirs(transcripts_dir, exist_ok=True)
             
-            # Create SRT subdirectory within transcripts
-            srt_dir = os.path.join(transcripts_dir, "srt")
-            os.makedirs(srt_dir, exist_ok=True)
-            
-            # Save files - SRT in subdirectory, TXT in main transcripts directory
-            srt_path = os.path.join(srt_dir, f"{video_name}.srt")
+            # Save both SRT and TXT files in the same directory
+            srt_path = os.path.join(transcripts_dir, f"{video_name}.srt")
             txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
         
         # Save files
@@ -470,21 +757,44 @@ async def _transcribe_videos_async(
     inject_subtitles_flag: bool,
     verbose: bool = False,
     model_size_or_path: str = "base",
-    resume: bool = False
+    resume: bool = False,
+    watch: bool = False,
+    recursive: bool = False
 ) -> Dict[str, List[str]]:
     """Transcribe videos with concurrent processing, rich progress bars, and resume functionality."""
     console = Console()
     results = {"successful": [], "failed": [], "skipped": []}
     
-    # Collect video files
-    videos_to_transcribe = []
+    # Handle watch mode
+    if watch:
+        if not WATCHDOG_AVAILABLE:
+            console.print("[red]Error: watchdog library not available. Install with: pip install watchdog[/red]")
+            return results
+        
+        if not os.path.isdir(input_path):
+            console.print("[red]Error: Watch mode requires a directory path[/red]")
+            return results
+        
+        # Start watch mode
+        watcher = WatchModeTranscriber(
+            input_path, output_dir, language, method, max_workers, 
+            inject_subtitles_flag, resume, recursive, model_size_or_path, verbose
+        )
+        
+        try:
+            await watcher.start_watching(process_existing=True)
+        except KeyboardInterrupt:
+            pass
+        
+        # Return watch mode results
+        return {
+            "successful": [f"watch_mode_successful_{watcher.stats['successful']}"],
+            "failed": [f"watch_mode_failed_{watcher.stats['failed']}"],
+            "skipped": [f"watch_mode_skipped_{watcher.stats['skipped']}"]
+        }
     
-    if os.path.isfile(input_path) and input_path.lower().endswith('.mp4'):
-        videos_to_transcribe.append(input_path)
-    elif os.path.isdir(input_path):
-        for file in os.listdir(input_path):
-            if file.lower().endswith('.mp4'):
-                videos_to_transcribe.append(os.path.join(input_path, file))
+    # Collect video files using recursive option
+    videos_to_transcribe = _collect_video_files(input_path, recursive)
     
     if not videos_to_transcribe:
         console.print("[yellow]Warning: No MP4 files found for transcription[/yellow]")
