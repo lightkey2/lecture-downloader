@@ -85,6 +85,8 @@ def merge(ctx, base_dir, input_dir, output_dir):
 @click.option('--language', '-lang', default='en-US', help='Language code')
 @click.option('--max-workers', '-w', default=3, type=int, help='Concurrent workers')
 @click.option('--no-inject', is_flag=True, help='Skip subtitle injection')
+@click.option('--save-txt/--no-save-txt', default=True, help='Save transcript TXT files (default: enabled)')
+@click.option('--save-srt/--no-save-srt', default=False, help='Save subtitle SRT files (default: disabled)')
 @click.option('--resume', is_flag=True, help='Skip already-transcribed files')
 @click.option('--watch', is_flag=True, help='Watch directory for new MP4 files and auto-transcribe')
 @click.option('--recursive', '-r', is_flag=True, help='Find MP4 files in subdirectories recursively')
@@ -92,7 +94,7 @@ def merge(ctx, base_dir, input_dir, output_dir):
 @click.option('--input-path', '-i', default=None, help='Legacy: Video file or directory (auto-detects direct vs smart mode)')
 @click.option('--output-dir', '-o', default=None, help='Legacy: Output directory (if provided with input-path, uses direct paths mode)')
 @click.pass_context
-def transcribe(ctx, base_dir, method, language, max_workers, no_inject, resume, watch, recursive, input_path, output_dir):
+def transcribe(ctx, base_dir, method, language, max_workers, no_inject, save_txt, save_srt, resume, watch, recursive, input_path, output_dir):
     """Transcribe videos using Google Cloud or Whisper."""
     verbose = ctx.obj['verbose']
     
@@ -105,6 +107,8 @@ def transcribe(ctx, base_dir, method, language, max_workers, no_inject, resume, 
             method=method,
             max_workers=max_workers,
             inject_subtitles=not no_inject,
+            save_txt=save_txt,
+            save_srt=save_srt,
             resume=resume,
             watch=watch,
             recursive=recursive,

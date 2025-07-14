@@ -198,6 +198,8 @@ class LectureProcessor:
         method: str = "auto",
         max_workers: int = 3,
         inject_subtitles: bool = True,
+        save_txt: bool = True,
+        save_srt: bool = False,
         resume: bool = False,
         watch: bool = False,
         recursive: bool = False,
@@ -281,7 +283,7 @@ class LectureProcessor:
                 return {"successful": [], "failed": []}
         
         return asyncio.run(_transcribe_videos_async(
-            final_input_path, final_output_dir, language, method, max_workers, inject_subtitles, verbose, model_size_or_path, resume, watch, recursive
+            final_input_path, final_output_dir, language, method, max_workers, inject_subtitles, save_txt, save_srt, verbose, model_size_or_path, resume, watch, recursive
         ))
     
     def process_pipeline(

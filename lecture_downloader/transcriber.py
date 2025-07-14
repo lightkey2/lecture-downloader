@@ -198,6 +198,10 @@ class VideoWatchHandler(FileSystemEventHandler):
     def on_created(self, event):
         """Handle file creation events."""
         if not event.is_directory and event.src_path.lower().endswith('.mp4'):
+            # Skip temporary files created by subtitle injection
+            if '.temp.mp4' in event.src_path.lower():
+                return
+            
             # Only track if not already processed or queued
             abs_path = os.path.abspath(event.src_path)
             if abs_path not in self.processed_files and abs_path not in self.queued_files:
@@ -207,6 +211,10 @@ class VideoWatchHandler(FileSystemEventHandler):
     def on_modified(self, event):
         """Handle file modification events."""
         if not event.is_directory and event.src_path.lower().endswith('.mp4'):
+            # Skip temporary files created by subtitle injection
+            if '.temp.mp4' in event.src_path.lower():
+                return
+            
             # Only track if not already processed or queued
             abs_path = os.path.abspath(event.src_path)
             if abs_path not in self.processed_files and abs_path not in self.queued_files:
@@ -524,7 +532,7 @@ class WatchModeTranscriber:
                 else:
                     success, srt_path, txt_path = await _transcribe_single_video(
                         video_path, self.output_dir, self.language, self.method, 
-                        self.inject_subtitles, self.verbose, self.model_size_or_path, 
+                        self.inject_subtitles, True, True, self.verbose, self.model_size_or_path, 
                         update_progress, update_status
                     )
                 
@@ -1063,7 +1071,6 @@ class WhisperTranscriber:
     def _get_model(self):
         """Get or initialize the Whisper model (cached after first use)."""
         if self._model is None:
-            print(f"Loading Whisper model: {self.model_size_or_path}")
             self._model = WhisperModel(
                 self.model_size_or_path, 
                 device=self.device, 
@@ -1125,6 +1132,8 @@ async def _transcribe_single_video(
     language: str, 
     method: str, 
     inject_subtitles_flag: bool,
+    save_txt: bool,
+    save_srt: bool,
     verbose: bool = False,
     model_size_or_path: str = "base",
     progress_callback=None,
@@ -1227,24 +1236,52 @@ async def _transcribe_single_video(
             srt_path = os.path.join(transcripts_dir, f"{video_name}.srt")
             txt_path = os.path.join(transcripts_dir, f"{video_name}.txt")
         
-        # Save files
-        with open(srt_path, 'w', encoding='utf-8') as f:
-            f.write(srt_content)
+        # Save files based on flags
+        srt_path_saved = None
+        txt_path_saved = None
         
-        with open(txt_path, 'w', encoding='utf-8') as f:
-            f.write(transcript_content)
+        if save_srt:
+            with open(srt_path, 'w', encoding='utf-8') as f:
+                f.write(srt_content)
+            srt_path_saved = srt_path
+        
+        if save_txt:
+            with open(txt_path, 'w', encoding='utf-8') as f:
+                f.write(transcript_content)
+            txt_path_saved = txt_path
         
         # Inject subtitles into video if requested
         if inject_subtitles_flag:
             update_status("Injecting subtitles...")
-            if await inject_subtitles(video_path, srt_path, verbose=False):
-                update_status("✅ Subtitles injected successfully")
-            else:
-                update_status("⚠️ Subtitle injection failed, but transcripts saved")
+            
+            # Determine which SRT file to use for injection
+            srt_file_for_injection = srt_path_saved
+            temp_srt_created = False
+            
+            # If SRT wasn't saved but injection is requested, create a temporary SRT file
+            if srt_file_for_injection is None:
+                temp_srt_path = os.path.join(os.path.dirname(srt_path), f".temp_{video_name}.srt")
+                with open(temp_srt_path, 'w', encoding='utf-8') as f:
+                    f.write(srt_content)
+                srt_file_for_injection = temp_srt_path
+                temp_srt_created = True
+            
+            try:
+                if await inject_subtitles(video_path, srt_file_for_injection, verbose=False):
+                    update_status("✅ Subtitles injected successfully")
+                else:
+                    update_status("⚠️ Subtitle injection failed, but transcripts saved")
+            finally:
+                # Clean up temporary SRT file if we created one
+                if temp_srt_created and os.path.exists(srt_file_for_injection):
+                    try:
+                        os.remove(srt_file_for_injection)
+                    except OSError:
+                        pass  # Ignore cleanup errors
         
         update_status(f"✅ Completed transcription for {video_name}")
         
-        return True, srt_path, txt_path
+        return True, srt_path_saved, txt_path_saved
 
 
 async def _transcribe_videos_async(
@@ -1254,6 +1291,8 @@ async def _transcribe_videos_async(
     method: str,
     max_workers: int,
     inject_subtitles_flag: bool,
+    save_txt: bool,
+    save_srt: bool,
     verbose: bool = False,
     model_size_or_path: str = "base",
     resume: bool = False,
@@ -1424,7 +1463,7 @@ async def _transcribe_videos_async(
                     
                     # Transcribe the video with progress and status callbacks
                     success, srt_path, txt_path = await _transcribe_single_video(
-                        video_path, output_dir, language, method, inject_subtitles_flag, verbose, model_size_or_path, update_transcription_progress, update_status
+                        video_path, output_dir, language, method, inject_subtitles_flag, save_txt, save_srt, verbose, model_size_or_path, update_transcription_progress, update_status
                     )
                     
                     if success:
@@ -1571,7 +1610,9 @@ def transcribe_videos(
     language: str = "en-US", # Language code for transcription (en-US for GCloud, en for Whisper)
     method: str = "auto", # "auto", "google", "whisper"
     max_workers: int = 3, 
-    inject_subtitles: bool = False, 
+    inject_subtitles: bool = False,
+    save_txt: bool = True, # Save transcript TXT files
+    save_srt: bool = False, # Save subtitle SRT files
     verbose: bool = False,
     model_size_or_path: str = "base", # Whisper model size or path to custom model
     # Legacy support (auto-detected)
@@ -1671,5 +1712,5 @@ def transcribe_videos(
     
     # Execute transcription (handles async internally)
     return asyncio.run(_transcribe_videos_async(
-        final_input_path, final_output_dir, language, method, max_workers, inject_subtitles, verbose, model_size_or_path
+        final_input_path, final_output_dir, language, method, max_workers, inject_subtitles, save_txt, save_srt, verbose, model_size_or_path
     ))
