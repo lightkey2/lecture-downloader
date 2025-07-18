@@ -73,7 +73,7 @@ class LectureProcessor:
             {"successful": [...], "failed": [...]}
         """
         # Check dependencies
-        check_dependencies()
+        check_dependencies(verbose=self.verbose)
         
         # Auto-detect user intent based on parameters provided
         if output_dir is not None:
@@ -135,7 +135,7 @@ class LectureProcessor:
             {"successful": [...], "failed": [...]}
         """
         # Check dependencies
-        check_dependencies()
+        check_dependencies(verbose=self.verbose)
         
         # Import the detection function from merger module
         from .merger import _detect_input_directory
@@ -232,7 +232,7 @@ class LectureProcessor:
             {"successful": [...], "failed": [...]}
         """
         # Check dependencies
-        check_dependencies()
+        check_dependencies(verbose=self.verbose)
         
         # Import the detection function from transcriber module
         from .transcriber import _detect_input_path
@@ -326,7 +326,7 @@ class LectureProcessor:
             }
         """
         # Check dependencies
-        check_dependencies()
+        check_dependencies(verbose=self.verbose)
         
         return asyncio.run(_process_pipeline_async(
             links, titles, output_dir, max_download_workers, max_transcribe_workers,

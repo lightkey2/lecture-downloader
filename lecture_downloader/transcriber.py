@@ -42,49 +42,18 @@ from .utils import (
 )
 
 
-def _print_transcribe_mapping(videos_to_transcribe: List[str], input_path: str, output_dir: str, method: str, verbose: bool = False):
-    """Print a clean tree view of the transcription mapping."""
-    # Always show the clean tree view (removed logging dependency)
+def _create_configuration_panel(input_path: str, output_dir: str, method: str, model_size_or_path: str = None, max_workers: int = 3) -> Panel:
+    """Create a clean configuration panel."""
+    config_text = f"[bold]Input:[/bold]  {input_path}\n"
+    config_text += f"[bold]Output:[/bold] {output_dir}\n"
+    config_text += f"[bold]Method:[/bold] {method}"
     
-    print(f"Transcription Plan:")
-    print(f"  Input: {input_path}")
-    print(f"  Output: {output_dir}")
-    print(f"  Method: {method}")
-    print(f"  Videos: {len(videos_to_transcribe)}")
-    print()
+    if method == "whisper" and model_size_or_path:
+        config_text += f" ({model_size_or_path} model)"
     
-    # Check if this is a single file input (output_dir is same as video directory)
-    is_single_file_input = False
-    if len(videos_to_transcribe) == 1:
-        video_dir = os.path.dirname(os.path.abspath(videos_to_transcribe[0]))
-        is_single_file_input = (output_dir == video_dir)
+    config_text += f"\n[bold]Workers:[/bold] {max_workers}"
     
-    for i, video_path in enumerate(videos_to_transcribe):
-        is_last_video = i == len(videos_to_transcribe) - 1
-        video_prefix = "└── " if is_last_video else "├── "
-        
-        # Get video name without extension
-        video_name = Path(video_path).stem
-        print(f"{video_prefix}{video_name}")
-        
-        # Show output files that will be created based on input type
-        if is_single_file_input:
-            # Single file input - files saved directly in same directory
-            if is_last_video:
-                print(f"    ├── {video_name}.txt")
-                print(f"    └── {video_name}.srt")
-            else:
-                print(f"│   ├── {video_name}.txt")
-                print(f"│   └── {video_name}.srt")
-        else:
-            # Directory input - both files saved in same transcripts directory
-            if is_last_video:
-                print(f"    ├── {video_name}.txt")
-                print(f"    └── {video_name}.srt")
-            else:
-                print(f"│   ├── {video_name}.txt")
-                print(f"│   └── {video_name}.srt")
-    print()
+    return Panel.fit(config_text, title="Transcription Configuration", border_style="blue")
 
 # Google Cloud imports (optional)
 try:
@@ -96,6 +65,8 @@ except ImportError:
     GOOGLE_CLOUD_AVAILABLE = False
 
 # Faster-whisper imports (optional)
+from faster_whisper import WhisperModel, BatchedInferencePipeline
+FASTER_WHISPER_AVAILABLE = True
 try:
     from faster_whisper import WhisperModel, BatchedInferencePipeline
     FASTER_WHISPER_AVAILABLE = True
@@ -352,7 +323,7 @@ class WatchStatusManager:
             f"[dim]Press Ctrl+C to stop watching[/dim]"
         )
         
-        return Panel.fit(summary_text, title="📹 Video Transcription Watcher")
+        return Panel.fit(summary_text, title="Video Transcription Watcher")
 
 
 class WatchModeTranscriber:
@@ -830,14 +801,14 @@ class WatchModeTranscriber:
     def _display_watch_status(self):
         """Display current watch status."""
         watch_info = Panel.fit(
-            f"[bold]🔍 Watch Mode Active[/bold]\n"
+            f"[bold]Watch Mode Active[/bold]\n"
             f"Directory: {self.watch_path}\n"
             f"Recursive: {'Yes' if self.recursive else 'No'}\n"
             f"Method: {self.method}\n"
             f"Workers: {self.max_workers}\n"
             f"Resume: {'Yes' if self.resume else 'No'}\n\n"
             f"[dim]Press Ctrl+C to stop watching[/dim]",
-            title="📹 Video Transcription Watcher"
+            title="Video Transcription Watcher"
         )
         self.console.print(watch_info)
     
@@ -1400,7 +1371,7 @@ async def _transcribe_videos_async(
     
     console.print(Panel.fit(
         summary_text,
-        title="📹 Video Transcription"
+        title="Video Transcription"
     ))
     
     # Create semaphore to limit concurrent transcriptions
@@ -1427,12 +1398,6 @@ async def _transcribe_videos_async(
         main_task = progress.add_task(
             f"[cyan]Transcribing {len(videos_to_process)} videos",
             total=len(videos_to_process)
-        )
-        
-        # Duration-based progress bar
-        duration_task = progress.add_task(
-            "[green]Processing video content",
-            total=total_duration
         )
         
         async def transcribe_with_progress(video_path: str) -> bool:
@@ -1469,7 +1434,6 @@ async def _transcribe_videos_async(
                     if success:
                         progress.update(video_task, completed=100, description=f"[green]✓ Completed: {video_name}")
                         processed_duration += video_duration
-                        progress.update(duration_task, completed=processed_duration)
                         
                         # Show saved transcript paths
                         if srt_path and txt_path:
@@ -1478,15 +1442,6 @@ async def _transcribe_videos_async(
                             print(f"📄 Saved transcripts to: {save_dir}")
                             console.print(f"   SRT: {os.path.basename(srt_path)}")
                             console.print(f"   TXT: {os.path.basename(txt_path)}")
-                        
-                        # Update ETA calculation
-                        elapsed = time.time() - start_time
-                        if elapsed > 0 and processed_duration > 0:
-                            processing_speed = processed_duration / elapsed
-                            remaining_duration = total_duration - processed_duration
-                            if processing_speed > 0:
-                                eta_seconds = remaining_duration / processing_speed
-                                progress.update(duration_task, description=f"[green]Processing content (Speed: {processing_speed:.1f}x)")
                         
                         return True
                     else:
@@ -1536,12 +1491,17 @@ async def _transcribe_videos_async(
     summary_table.add_column("Count", justify="right")
     summary_table.add_column("Details", style="dim")
     
-    summary_table.add_row("✅ Successful", str(len(results["successful"])), "Transcribed successfully")
-    summary_table.add_row("❌ Failed", str(len(results["failed"])), "Transcription failed")
-    summary_table.add_row("⏭️ Skipped", str(len(results["skipped"])), "Already transcribed (resume mode)")
-    summary_table.add_row("⏱️ Total Time", _format_time(elapsed_total), f"Processing speed: {processed_duration/elapsed_total:.1f}x realtime" if elapsed_total > 0 else "")
+    summary_table.add_row("[green]Successful[/green]", str(len(results["successful"])), "Transcribed successfully")
+    summary_table.add_row("[red]Failed[/red]", str(len(results["failed"])), "Transcription failed")
+    summary_table.add_row("[yellow]Skipped[/yellow]", str(len(results["skipped"])), "Already transcribed (resume mode)")
+    summary_table.add_row("[blue]Total Time[/blue]", _format_time(elapsed_total), f"Processing speed: {processed_duration/elapsed_total:.1f}x realtime" if elapsed_total > 0 else "")
     
     console.print(summary_table)
+    
+    # Final completion message with checkmark emoji (only emoji allowed)
+    console.print("✅ Transcription completed!")
+    console.print(f"   Successful: {len(results['successful'])}")
+    console.print(f"   Failed: {len(results['failed'])}")
     
     return results
 
@@ -1652,7 +1612,8 @@ def transcribe_videos(
             final_input_path = input_path
             final_output_dir = output_dir
             if verbose:
-                print(f"Using direct paths mode: {input_path} -> {output_dir}")
+                print(f"Input: {input_path}")
+                print(f"Output: {output_dir}")
         else:
             # Only input specified = smart detection on input, default output
             if os.path.isdir(input_path):
@@ -1661,13 +1622,15 @@ def transcribe_videos(
                 final_input_path = input_path
             final_output_dir = os.path.join(os.path.dirname(final_input_path), "transcripts")
             if verbose:
-                print(f"Using legacy mode with smart detection: {final_input_path} -> {final_output_dir}")
+                print(f"Input: {final_input_path}")
+                print(f"Output: {final_output_dir}")
     else:
         # New simplified mode
         final_input_path = _detect_input_path(base_dir, verbose)
         final_output_dir = os.path.join(base_dir, "transcripts")
         if verbose:
-            print(f"Using simplified mode: {final_input_path} -> {final_output_dir}")
+            print(f"Input: {final_input_path}")
+            print(f"Output: {final_output_dir}")
     
     if not os.path.exists(final_input_path):
         raise FileNotFoundError(f"Input path not found: {final_input_path}")
@@ -1707,8 +1670,10 @@ def transcribe_videos(
     
     videos_to_transcribe.sort(key=lambda x: extract_module_number_from_filename(os.path.basename(x)))
     
-    # Show clean mapping
-    _print_transcribe_mapping(videos_to_transcribe, final_input_path, final_output_dir, method, verbose)
+    # Show clean configuration panel
+    console = Console()
+    config_panel = _create_configuration_panel(final_input_path, final_output_dir, method, model_size_or_path, max_workers)
+    console.print(config_panel)
     
     # Execute transcription (handles async internally)
     return asyncio.run(_transcribe_videos_async(

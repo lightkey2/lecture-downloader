@@ -303,14 +303,16 @@ def create_directory_structure(base_dir: str) -> Dict[str, str]:
     return structure
 
 
-def check_dependencies():
+def check_dependencies(verbose: bool = False):
     """Check if required tools are available (auto-download if needed)."""
     try:
         ffmpeg_path = get_ffmpeg_exe()
         ffprobe_path = get_ffprobe_exe()
-        print(f"✅ FFmpeg found: {ffmpeg_path}")
-        print(f"✅ FFprobe found: {ffprobe_path}")
+        if verbose:
+            print(f"FFmpeg found: {ffmpeg_path}")
+            print(f"FFprobe found: {ffprobe_path}")
     except RuntimeError as e:
+        print(f"[red]FFmpeg setup failed: {e}[/red]")
         raise RuntimeError(f"FFmpeg setup failed: {e}")
 
 

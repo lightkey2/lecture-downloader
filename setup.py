@@ -30,20 +30,21 @@ setup(
         "Programming Language :: Python :: 3.11",
     ],
     python_requires=">=3.8",
+    
     install_requires=[
         "click>=8.0.0",
         "pandas>=1.3.0",
         "python-dotenv>=0.19.0",
         "aiofiles>=0.8.0",
         "aiohttp>=3.8.0",
-        "faster-whisper>=0.10.0",
+        "faster-whisper==1.1.1",
         "imageio-ffmpeg>=0.4.0",
-        # "google-cloud-speech>=2.16.0",
-        # "google-cloud-storage>=2.7.0",
         "IPython>=7.0.0",
         "ipywidgets>=7.6.0",
         "jupyter",
         "notebook"
+        # "google-cloud-speech>=2.16.0",
+        # "google-cloud-storage>=2.7.0",
     ],
     extras_require={
         "gcloud": [

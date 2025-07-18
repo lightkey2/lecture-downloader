@@ -9,7 +9,7 @@ import asyncio
 from typing import Dict, List, Optional, Union
 
 from .merger import _merge_all_modules_async, _print_merge_mapping
-from .transcriber import _transcribe_videos_async, _print_transcribe_mapping, _detect_input_path as transcriber_detect_input_path
+from .transcriber import _transcribe_videos_async, _detect_input_path as transcriber_detect_input_path
 from .utils import create_directory_structure, check_dependencies, detect_transcription_method
 from .downloader import _parse_links_input, _parse_titles_input, _map_units_to_modules, _generate_lecture_data, _download_lectures_async, _print_download_mapping
 
@@ -186,7 +186,7 @@ async def _process_pipeline_async(
         videos_to_transcribe.sort(key=lambda x: extract_module_number_from_filename(os.path.basename(x)))
         
         # Show transcription mapping
-        _print_transcribe_mapping(videos_to_transcribe, input_for_transcribe, actual_transcripts_dir, transcription_method, verbose)
+        # _print_transcribe_mapping(videos_to_transcribe, input_for_transcribe, actual_transcripts_dir, transcription_method, verbose)
         
         results["transcribe"] = await _transcribe_videos_async(
             input_for_transcribe, actual_transcripts_dir, language, 
