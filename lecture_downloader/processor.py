@@ -80,12 +80,12 @@ class LectureProcessor:
             # Legacy mode detected - use output_dir directly (direct paths mode)
             final_output_dir = output_dir
             if self.verbose:
-                print(f"Using legacy direct paths mode: downloads to {output_dir}")
+                print(f"Using legacy direct paths mode: downloads to '{output_dir}'")
         else:
             # New simplified mode - use base_dir/lecture-downloads
             final_output_dir = os.path.join(base_dir, "lecture-downloads")
             if self.verbose:
-                print(f"Using simplified mode: downloads to {final_output_dir}")
+                print(f"Using simplified mode: downloads to '{final_output_dir}'")
         
         # Parse and normalize inputs
         parsed_links = _parse_links_input(links)
@@ -162,25 +162,25 @@ class LectureProcessor:
                     final_input_dir = input_dir
                     final_output_dir = output_dir
                     if self.verbose:
-                        print(f"Using direct paths mode: {input_dir} -> {output_dir}")
+                        print(f"Using direct paths mode: '{input_dir}' -> '{output_dir}'")
                 else:
                     # Apply smart detection even with both parameters
                     final_input_dir = _detect_input_directory(input_dir, self.verbose)
                     final_output_dir = output_dir
                     if self.verbose:
-                        print(f"Using smart detection with explicit output: {final_input_dir} -> {output_dir}")
+                        print(f"Using smart detection with explicit output: '{final_input_dir}' -> '{output_dir}'")
             else:
                 # Only input specified = smart detection on input, default output
                 final_input_dir = _detect_input_directory(input_dir, self.verbose)
                 final_output_dir = os.path.join(input_dir, "merged-lectures")
                 if self.verbose:
-                    print(f"Using legacy mode with smart detection: {final_input_dir} -> {final_output_dir}")
+                    print(f"Using legacy mode with smart detection: '{final_input_dir}' -> '{final_output_dir}'")
         else:
             # New simplified mode
             final_input_dir = _detect_input_directory(base_dir, self.verbose)
             final_output_dir = os.path.join(base_dir, "merged-lectures")
             if self.verbose:
-                print(f"Using simplified mode: {final_input_dir} -> {final_output_dir}")
+                print(f"Using simplified mode: '{final_input_dir}' -> '{final_output_dir}'")
         
         if not os.path.exists(final_input_dir):
             raise FileNotFoundError(f"Input directory not found: {final_input_dir}")

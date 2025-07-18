@@ -301,13 +301,13 @@ def merge_videos(
             final_input_dir = _detect_input_directory(input_dir, verbose)
             final_output_dir = os.path.join(input_dir, "merged-lectures")
             if verbose:
-                print(f"Using legacy mode with smart detection: {final_input_dir} -> {final_output_dir}")
+                print(f"Using legacy mode with smart detection: '{final_input_dir}' -> '{final_output_dir}'")
     else:
         # New simplified mode
         final_input_dir = _detect_input_directory(base_dir, verbose)
         final_output_dir = os.path.join(base_dir, "merged-lectures")
         if verbose:
-            print(f"Using simplified mode: {final_input_dir} -> {final_output_dir}")
+            print(f"Using simplified mode: '{final_input_dir}' -> '{final_output_dir}'")
     
     if not os.path.exists(final_input_dir):
         raise FileNotFoundError(f"Input directory not found: {final_input_dir}")
