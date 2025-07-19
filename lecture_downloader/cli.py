@@ -80,6 +80,7 @@ def merge(ctx, base_dir, input_dir, output_dir):
 
 
 @cli.command()
+@click.argument('path', required=False)
 @click.option('--base-dir', '-b', default='.', help='Base project directory (auto-detects input, outputs to base-dir/transcripts)')
 @click.option('--method', '-m', default='auto', type=click.Choice(['auto', 'gcloud', 'whisper']), help='Transcription method')
 @click.option('--language', '-lang', default='en-US', help='Language code')
@@ -94,15 +95,26 @@ def merge(ctx, base_dir, input_dir, output_dir):
 @click.option('--input-path', '-i', default=None, help='Legacy: Video file or directory (auto-detects direct vs smart mode)')
 @click.option('--output-dir', '-o', default=None, help='Legacy: Output directory (if provided with input-path, uses direct paths mode)')
 @click.pass_context
-def transcribe(ctx, base_dir, method, language, max_workers, no_inject, save_txt, save_srt, resume, watch, recursive, input_path, output_dir):
-    """Transcribe videos using Google Cloud or Whisper."""
+def transcribe(ctx, path, base_dir, method, language, max_workers, no_inject, save_txt, save_srt, resume, watch, recursive, input_path, output_dir):
+    """Transcribe videos using Google Cloud or Whisper.
+    
+    PATH can be a video file or directory. If not provided, uses --base-dir (or current directory).
+    
+    Examples:
+      lecture-downloader transcribe /path/to/video.mp4
+      lecture-downloader transcribe ./videos-dir
+      lecture-downloader transcribe -b /path/to/videos
+    """
     verbose = ctx.obj['verbose']
+    
+    # Use positional path argument if provided, otherwise fall back to base_dir
+    effective_base_dir = path if path is not None else base_dir
     
     processor = LectureProcessor(verbose=verbose, interactive=False)
     
     try:
         results = processor.transcribe_videos(
-            base_dir=base_dir,
+            base_dir=effective_base_dir,
             language=language,
             method=method,
             max_workers=max_workers,
