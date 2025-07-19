@@ -712,7 +712,9 @@ def download_lectures(
         # New simplified mode - use base_dir/lecture-downloads
         final_output_dir = os.path.join(base_dir, "lecture-downloads")
         if verbose:
-            print(f"Using simplified mode: downloads to {final_output_dir}")
+            from rich.console import Console
+            console = Console()
+            console.print(f"[bold blue]Using simplified mode:[/bold blue] [green]downloads to[/green] [cyan]{final_output_dir}[/cyan]")
     
     # Parse and normalize inputs
     parsed_links = _parse_links_input(links, verbose)

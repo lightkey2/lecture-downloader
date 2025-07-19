@@ -1486,7 +1486,7 @@ async def _transcribe_videos_async(
     total_processed = len(results["successful"]) + len(results["failed"])
     elapsed_total = time.time() - start_time
     
-    summary_table = Table(title="📊 Transcription Results")
+    summary_table = Table(title="Transcription Results")
     summary_table.add_column("Status", style="bold")
     summary_table.add_column("Count", justify="right")
     summary_table.add_column("Details", style="dim")
@@ -1499,9 +1499,9 @@ async def _transcribe_videos_async(
     console.print(summary_table)
     
     # Final completion message with checkmark emoji (only emoji allowed)
-    console.print("✅ Transcription completed!")
+    console.print("✓ Transcription completed!")
     console.print(f"   Successful: {len(results['successful'])}")
-    console.print(f"   Failed: {len(results['failed'])}")
+    console.print(f"   Failed: {len(results['failed'])}\n")
     
     return results
 

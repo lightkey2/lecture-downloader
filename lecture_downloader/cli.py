@@ -46,6 +46,21 @@ def download(ctx, links, titles, base_dir, max_workers, no_custom_titles, output
         click.echo(f"   Successful: {len(results['successful'])}")
         click.echo(f"   Failed: {len(results['failed'])}")
         
+        # Display output directory with Rich formatting
+        from rich.console import Console
+        console = Console()
+        
+        # Determine the output directory
+        if output_dir:
+            final_output_dir = output_dir
+        else:
+            final_output_dir = os.path.join(base_dir, "lecture-downloads")
+        
+        # Convert to absolute path for display
+        abs_output_dir = os.path.abspath(final_output_dir)
+        console.print(f"[bold green]Output saved to:[/bold green]")
+        print(f"   '{abs_output_dir}'")
+        
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         raise click.Abort()
@@ -73,6 +88,23 @@ def merge(ctx, base_dir, input_dir, output_dir):
         click.echo(f"✅ Merge completed!")
         click.echo(f"   Successful: {len(results['successful'])}")
         click.echo(f"   Failed: {len(results['failed'])}")
+        
+        # Display output directory with Rich formatting
+        from rich.console import Console
+        console = Console()
+        
+        # Determine the output directory
+        if output_dir:
+            final_output_dir = output_dir
+        elif input_dir:
+            final_output_dir = os.path.join(input_dir, "merged-lectures")
+        else:
+            final_output_dir = os.path.join(base_dir, "merged-lectures")
+        
+        # Convert to absolute path for display
+        abs_output_dir = os.path.abspath(final_output_dir)
+        console.print(f"[bold green]Output saved to:[/bold green]")
+        print(f"   '{abs_output_dir}'")
         
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
@@ -128,9 +160,29 @@ def transcribe(ctx, path, base_dir, method, language, max_workers, no_inject, sa
             output_dir=output_dir
         )
         
-        click.echo(f"✅ Transcription completed!")
-        click.echo(f"   Successful: {len(results['successful'])}")
-        click.echo(f"   Failed: {len(results['failed'])}")
+        
+        # Display output directory with Rich formatting
+        from rich.console import Console
+        console = Console()
+        
+        # Determine the output directory
+        if output_dir:
+            final_output_dir = output_dir
+        elif input_path:
+            if os.path.isfile(input_path):
+                final_output_dir = os.path.dirname(input_path)
+            else:
+                final_output_dir = os.path.join(input_path, "transcripts")
+        else:
+            if os.path.isfile(effective_base_dir):
+                final_output_dir = os.path.dirname(effective_base_dir)
+            else:
+                final_output_dir = os.path.join(effective_base_dir, "transcripts")
+        
+        # Convert to absolute path for display
+        abs_output_dir = os.path.abspath(final_output_dir)
+        console.print(f"[bold green]Output saved to:[/bold green]")
+        print(f"   '{abs_output_dir}'")
         
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)

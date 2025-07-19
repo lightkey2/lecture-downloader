@@ -8,6 +8,8 @@ import os
 import asyncio
 from typing import Dict, List, Optional, Union
 
+from rich.console import Console
+
 from .merger import _merge_all_modules_async
 from .pipeline import _process_pipeline_async
 from .transcriber import _transcribe_videos_async
@@ -36,6 +38,7 @@ class LectureProcessor:
         self.verbose = verbose
         self.interactive = interactive
         self.is_jupyter = detect_jupyter()
+        self.console = Console()
     
     def download_lectures(
         self,
@@ -73,7 +76,7 @@ class LectureProcessor:
             {"successful": [...], "failed": [...]}
         """
         # Check dependencies
-        check_dependencies(verbose=self.verbose)
+        check_dependencies()
         
         # Auto-detect user intent based on parameters provided
         if output_dir is not None:
@@ -85,7 +88,7 @@ class LectureProcessor:
             # New simplified mode - use base_dir/lecture-downloads
             final_output_dir = os.path.join(base_dir, "lecture-downloads")
             if self.verbose:
-                print(f"Using simplified mode: downloads to '{final_output_dir}'")
+                self.console.print(f"[bold blue]Using simplified mode:[/bold blue] [green]downloads to[/green] [cyan]'{final_output_dir}'[/cyan]")
         
         # Parse and normalize inputs
         parsed_links = _parse_links_input(links)
@@ -135,7 +138,7 @@ class LectureProcessor:
             {"successful": [...], "failed": [...]}
         """
         # Check dependencies
-        check_dependencies(verbose=self.verbose)
+        check_dependencies()
         
         # Import the detection function from merger module
         from .merger import _detect_input_directory
@@ -232,7 +235,7 @@ class LectureProcessor:
             {"successful": [...], "failed": [...]}
         """
         # Check dependencies
-        check_dependencies(verbose=self.verbose)
+        check_dependencies()
         
         # Import the detection function from transcriber module
         from .transcriber import _detect_input_path
@@ -270,7 +273,7 @@ class LectureProcessor:
                 final_output_dir = os.path.join(base_dir, "transcripts")
             
             if self.verbose:
-                print(f"Using simplified mode: {final_input_path} -> {final_output_dir}")
+                self.console.print(f"[bold blue]Using simplified mode:[/bold blue] [green]{final_input_path}[/green] [yellow]→[/yellow] [cyan]{final_output_dir}[/cyan]")
         
         if not os.path.exists(final_input_path):
             raise FileNotFoundError(f"Input path not found: {final_input_path}")
@@ -326,7 +329,7 @@ class LectureProcessor:
             }
         """
         # Check dependencies
-        check_dependencies(verbose=self.verbose)
+        check_dependencies()
         
         return asyncio.run(_process_pipeline_async(
             links, titles, output_dir, max_download_workers, max_transcribe_workers,

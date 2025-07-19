@@ -307,7 +307,9 @@ def merge_videos(
         final_input_dir = _detect_input_directory(base_dir, verbose)
         final_output_dir = os.path.join(base_dir, "merged-lectures")
         if verbose:
-            print(f"Using simplified mode: '{final_input_dir}' -> '{final_output_dir}'")
+            from rich.console import Console
+            console = Console()
+            console.print(f"[bold blue]Using simplified mode:[/bold blue] [green]'{final_input_dir}'[/green] [yellow]→[/yellow] [cyan]'{final_output_dir}'[/cyan]")
     
     if not os.path.exists(final_input_dir):
         raise FileNotFoundError(f"Input directory not found: {final_input_dir}")
