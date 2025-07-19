@@ -31,7 +31,7 @@ from .downloader import download_lectures
 from .transcriber import transcribe_videos
 
 # Version info
-__version__ = "1.1.5"
+__version__ = "1.1.6"
 __author__ = "dan-dev-ml"
 __email__ = "dan.dev.ml@gmail.com"
 

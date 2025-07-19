@@ -10,7 +10,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="lecture_downloader",
-    version="1.1.5",
+    version="1.1.6",
     author="dan-dev-ml",
     author_email="dan.dev.ml@gmail.com",
     url="https://github.com/dan-dev-ml/lecture-downloader",
