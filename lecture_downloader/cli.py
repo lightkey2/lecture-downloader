@@ -8,7 +8,7 @@ import click
 from .processor import LectureProcessor
 
 
-@click.group()
+@click.group(context_settings={'help_option_names': ['-h', '--help']})
 @click.option('--verbose/--quiet', default=True, help='Enable verbose output')
 @click.pass_context
 def cli(ctx, verbose):
